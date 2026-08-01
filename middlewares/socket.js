@@ -14,7 +14,7 @@ function initializeSocket(server) {
         cors: {
             origin: [
                 "https://admin.socket.io",
-                "http://localhost:5000",
+                "http://localhost:5050",
                 "*"
             ],
             methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],

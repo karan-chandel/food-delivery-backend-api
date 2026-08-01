@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: food-delivery-backend-api
+    runtime: node
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MDB_URI
+        placeholder: "Enter your MongoDB connection string (e.g. mongodb+srv://...)"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: API_VERSION
+        value: v1
