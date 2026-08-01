@@ -1,6 +1,6 @@
 const { Server } = require("socket.io");
 const jwt = require('jsonwebtoken');
-const { JWT_SECRET } = require('../config/config');
+const { JWT_SECRET, ALLOWLIST } = require('../config/config');
 const Admin = require('../models/Admin');
 const Customer = require('../models/Customer');
 const Rider = require('../models/Rider');
@@ -12,11 +12,7 @@ const { createNotification, createRestaurantNotifications } = require('../utils/
 function initializeSocket(server) {
     const io = new Server(server, {
         cors: {
-            origin: [
-                "https://admin.socket.io",
-                "http://localhost:5050",
-                "*"
-            ],
+            origin: ALLOWLIST,
             methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
             credentials: true
         },
