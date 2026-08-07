@@ -52,6 +52,10 @@ const cartSchema = new mongoose.Schema({
     discountAmount: { type: Number },
     couponId: { type: mongoose.Schema.Types.ObjectId, ref: 'Coupon' } // ✅ ADD THIS
   },
+  tax: {
+    type: Number,
+    default: 0
+  },
   finalAmount: {
     type: Number,
     default: 0
@@ -87,6 +91,16 @@ cartSchema.methods.calculateTotal = async function () {
   }
 
   this.totalAmount = total;
+
+  let taxRate = 5;
+  if (this.restaurantId) {
+    const Restaurant = mongoose.model('Restaurant');
+    const restaurant = await Restaurant.findById(this.restaurantId);
+    if (restaurant && restaurant.taxRate !== undefined) {
+      taxRate = restaurant.taxRate;
+    }
+  }
+  this.tax = Math.round((total * taxRate) / 100);
 
   // ✅ Fixed coupon handling
   if (this.coupon && this.coupon.code) {

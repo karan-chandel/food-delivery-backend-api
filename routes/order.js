@@ -823,7 +823,8 @@ router.post("/", auth, requireRole(['customer']), async (req, res, next) => {
       });
 
     const deliveryFee = restaurant.deliveryFee || 0;
-    const tax = Math.round(subtotal * 0.05);
+    const taxRate = restaurant.taxRate !== undefined ? restaurant.taxRate : 5;
+    const tax = Math.round((subtotal * taxRate) / 100);
     let finalAmount = subtotal + deliveryFee + tax;
 
 

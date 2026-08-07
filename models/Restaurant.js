@@ -95,6 +95,10 @@ rating: {
     type: Number,
     default: 0
   },
+  taxRate: {
+    type: Number,
+    default: 5
+  },
   isActive: {
     type: Boolean,
     default: true  // Platform par dikhane ke liye

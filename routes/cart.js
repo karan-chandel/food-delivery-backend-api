@@ -13,7 +13,7 @@ router.get("/", auth, requireRole(['customer']), async (req, res, next) => {
 
     let cart = await Cart.findOne({ userId })
       .populate('items.menuItemId', 'name price images isVeg isAvailable')
-      .populate('restaurantId', 'name address deliveryTime minOrderAmount deliveryFee');
+      .populate('restaurantId', 'name address deliveryTime minOrderAmount deliveryFee taxRate');
 
     if (!cart) {
       cart = new Cart({ userId, items: [] });
@@ -130,7 +130,7 @@ router.post("/", auth, requireRole(['customer']), async (req, res, next) => {
     await cart.save();
 
     await cart.populate('items.menuItemId', 'name price images isVeg');
-    await cart.populate('restaurantId', 'name deliveryTime minOrderAmount');
+    await cart.populate('restaurantId', 'name deliveryTime minOrderAmount deliveryFee taxRate');
 
     const io = req.app.get("io");
     io.to(userId.toString()).emit("cart updated", {
@@ -187,7 +187,7 @@ router.put("/item/:menuItemId", auth, requireRole(['customer']), async (req, res
     await cart.save();
 
     await cart.populate('items.menuItemId', 'name price images isVeg');
-    await cart.populate('restaurantId', 'name deliveryTime minOrderAmount');
+    await cart.populate('restaurantId', 'name deliveryTime minOrderAmount deliveryFee taxRate');
 
     res.json({
       success: true,
@@ -229,7 +229,7 @@ router.delete("/item/:menuItemId", auth, requireRole(['customer']), async (req, 
     await cart.save();
 
     await cart.populate('items.menuItemId', 'name price images isVeg');
-    await cart.populate('restaurantId', 'name deliveryTime minOrderAmount');
+    await cart.populate('restaurantId', 'name deliveryTime minOrderAmount deliveryFee taxRate');
 
     res.json({
       success: true,
@@ -350,7 +350,7 @@ router.post("/apply-coupon", auth, requireRole(['customer']), async (req, res, n
     await cart.save();
 
     await cart.populate('items.menuItemId', 'name price images isVeg');
-    await cart.populate('restaurantId', 'name deliveryTime minOrderAmount');
+    await cart.populate('restaurantId', 'name deliveryTime minOrderAmount deliveryFee taxRate');
 
     res.json({
       success: true,
@@ -381,7 +381,7 @@ router.delete("/coupon", auth, requireRole(['customer']), async (req, res, next)
     await cart.save();
 
     await cart.populate('items.menuItemId', 'name price images isVeg');
-    await cart.populate('restaurantId', 'name deliveryTime minOrderAmount');
+    await cart.populate('restaurantId', 'name deliveryTime minOrderAmount deliveryFee taxRate');
 
     res.json({
       success: true,
