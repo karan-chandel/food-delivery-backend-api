@@ -4,7 +4,7 @@ const router = express.Router();
 const MenuItem = require("../models/MenuItem");
 const Restaurant = require("../models/Restaurant");
 const { auth, requireRole } = require("../middlewares/auth");
-const { upload, handleUploadErrors } = require("../middlewares/upload");
+const { upload, uploadBufferToCloudinary, handleUploadErrors } = require("../middlewares/upload");
 const fs = require("fs");
 const path = require("path");
 
@@ -51,12 +51,18 @@ router.get("/restaurant/:restaurantId", async (req, res, next) => {
             // if image is just a URL string
             return { url: img };
           }
-          // if image is an object (like uploaded file)
+          // if image is an object (like uploaded file or Cloudinary)
+          let finalUrl = img.url;
+          if (!finalUrl || !finalUrl.startsWith('http')) {
+            if (img.path && img.path.startsWith('http')) {
+              finalUrl = img.path;
+            } else if (img.path) {
+              finalUrl = `${req.protocol}://${req.get('host')}/${img.path.replace(/\\/g, '/')}`;
+            }
+          }
           return {
             path: img.path,
-            url: img.path
-              ? `${req.protocol}://${req.get('host')}/${img.path.replace(/\\/g, '/')}`
-              : img.url
+            url: finalUrl || img.url
           };
         })
         : []
@@ -140,13 +146,24 @@ router.post("/restaurant/:restaurantId", auth, requireRole(["restaurant"]), uplo
     // ✅ Prepare images array
     let images = [];
 
-    // 1️⃣ If files uploaded
+    // 1️⃣ If files uploaded (Native Cloudinary stream upload)
     if (req.files && req.files.length > 0) {
-      images = req.files.map(file => ({
-        url: `${req.protocol}://${req.get("host")}/${file.path.replace(/\\/g, "/")}`,
-        filename: file.filename,
-        path: file.path
-      }));
+      const uploadPromises = req.files.map(async file => {
+        if (file.buffer) {
+          const result = await uploadBufferToCloudinary(file.buffer, "hungry-hub/menu-items");
+          return {
+            url: result.secure_url,
+            filename: result.public_id,
+            path: result.secure_url
+          };
+        }
+        return {
+          url: file.path,
+          filename: file.filename || null,
+          path: file.path
+        };
+      });
+      images = await Promise.all(uploadPromises);
     }
     // 2️⃣ If JSON URLs provided
     else if (req.body.images) {
