@@ -13,60 +13,31 @@ const Order = require("../models/Order");
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
+const { uploadBufferToCloudinary } = require('../middlewares/upload');
 
-// RESTAURANT DOCUMENTS STORAGE CONFIGURATION
-const restaurantDocsStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const restaurantDir = path.join(__dirname, '../uploads/restaurants');
-    if (!fs.existsSync(restaurantDir)) {
-      fs.mkdirSync(restaurantDir, { recursive: true });
-    }
-    cb(null, restaurantDir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, "restaurant-" + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
+// Storage configuration using memory storage (Buffer streams to Cloudinary)
 const upload = multer({
-  storage: restaurantDocsStorage,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'application/pdf'];
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'application/pdf'];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only JPG, JPEG, PNG, PDF are allowed.'), false);
+      cb(new Error('Invalid file type. Only JPG, JPEG, PNG, WEBP, PDF are allowed.'), false);
     }
-  }
-});
-
-// RIDER DOCUMENTS STORAGE CONFIGURATION
-
-const riderDocsStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const riderDir = path.join(__dirname, '../uploads/riders');
-    if (!fs.existsSync(riderDir)) {
-      fs.mkdirSync(riderDir, { recursive: true });
-    }
-    cb(null, riderDir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, "rider-" + uniqueSuffix + path.extname(file.originalname));
   }
 });
 
 const riderUpload = multer({
-  storage: riderDocsStorage,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'application/pdf'];
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'application/pdf'];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only JPG, JPEG, PNG, PDF are allowed.'), false);
+      cb(new Error('Invalid file type. Only JPG, JPEG, PNG, WEBP, PDF are allowed.'), false);
     }
   }
 });
@@ -911,8 +882,8 @@ router.post('/rider/complete',
 
       // Validation
       if (!vehicleType || !vehicleNo || !licenseNumber) {
-        if (req.files?.licensePhoto?.[0]) fs.unlinkSync(req.files.licensePhoto[0].path);
-        if (req.files?.vehiclePhoto?.[0]) fs.unlinkSync(req.files.vehiclePhoto[0].path);
+        if (req.files?.licensePhoto?.[0]?.path) try { fs.unlinkSync(req.files.licensePhoto[0].path); } catch(e) {}
+        if (req.files?.vehiclePhoto?.[0]?.path) try { fs.unlinkSync(req.files.vehiclePhoto[0].path); } catch(e) {}
 
         return res.status(400).json({
           success: false,
@@ -954,12 +925,14 @@ router.post('/rider/complete',
         ratings: []
       };
 
-      // Add file paths if uploaded
-      if (req.files?.licensePhoto?.[0]) {
-        riderData.licensePhoto = `/uploads/riders/${req.files.licensePhoto[0].filename}`;
+      // Upload to Cloudinary if files provided
+      if (req.files?.licensePhoto?.[0]?.buffer) {
+        const result = await uploadBufferToCloudinary(req.files.licensePhoto[0].buffer, "hungry-hub/riders");
+        riderData.licensePhoto = result.secure_url;
       }
-      if (req.files?.vehiclePhoto?.[0]) {
-        riderData.vehiclePhoto = `/uploads/riders/${req.files.vehiclePhoto[0].filename}`;
+      if (req.files?.vehiclePhoto?.[0]?.buffer) {
+        const result = await uploadBufferToCloudinary(req.files.vehiclePhoto[0].buffer, "hungry-hub/riders");
+        riderData.vehiclePhoto = result.secure_url;
       }
 
       let newRider;
@@ -1141,21 +1114,14 @@ router.post('/restaurant/complete',
         if (restaurantData.fssaiNumber) updateData.fssaiNumber = restaurantData.fssaiNumber;
 
         if (req.files?.restaurantImages && req.files.restaurantImages.length > 0) {
-          // const newImages = req.files.restaurantImages.map(file => 
-          //   `/uploads/restaurants/${file.filename}`
-          // );
-           if (existingRestaurant.images && existingRestaurant.images.length > 0) {
-      existingRestaurant.images.forEach(oldImage => {
-        const oldPath = path.join(__dirname, '..', oldImage);
-        if (fs.existsSync(oldPath)) {
-          try { fs.unlinkSync(oldPath); } catch(e) { console.log('Error deleting old image:', e); }
-        }
-      });
-    }
-     updateData.images = req.files.restaurantImages.map(file => 
-      `/uploads/restaurants/${file.filename}`
-    );
-          // updateData.images = [...(existingRestaurant.images || []), ...newImages];
+          const uploadPromises = req.files.restaurantImages.map(async file => {
+            if (file.buffer) {
+              const res = await uploadBufferToCloudinary(file.buffer, "hungry-hub/restaurants");
+              return res.secure_url;
+            }
+            return file.path;
+          });
+          updateData.images = await Promise.all(uploadPromises);
         }
         newRestaurant = await Restaurant.findByIdAndUpdate(
           existingRestaurant._id,
@@ -1167,10 +1133,15 @@ router.post('/restaurant/complete',
           : 'Restaurant registration updated. Waiting for admin approval.';
         isUpdate = true;
       } else {
-          if (req.files?.restaurantImages) {
-          restaurantData.images = req.files.restaurantImages.map(file => 
-            `/uploads/restaurants/${file.filename}`
-          );
+        if (req.files?.restaurantImages && req.files.restaurantImages.length > 0) {
+          const uploadPromises = req.files.restaurantImages.map(async file => {
+            if (file.buffer) {
+              const res = await uploadBufferToCloudinary(file.buffer, "hungry-hub/restaurants");
+              return res.secure_url;
+            }
+            return file.path;
+          });
+          restaurantData.images = await Promise.all(uploadPromises);
         }
         // CREATE new restaurant
         newRestaurant = await Restaurant.create(restaurantData);
