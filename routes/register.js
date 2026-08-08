@@ -353,7 +353,8 @@ router.post('/restaurant/complete',
         deliveryTime,
         bankAccountNumber,
         bankIFSC,
-        upiId
+        upiId,
+        taxRate
       } = req.body;
 
       // ========================================
@@ -404,6 +405,7 @@ router.post('/restaurant/complete',
         minOrderAmount: minOrderAmount ? parseFloat(minOrderAmount) : 0,
         deliveryFee: deliveryFee ? parseFloat(deliveryFee) : 0,
         deliveryTime: deliveryTime || '30-45 mins',
+        taxRate: taxRate ? parseFloat(taxRate) : 5,
         isActive: false,
         isOpen: false,
         gstNumber: gstNumber || null,

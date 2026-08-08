@@ -179,6 +179,10 @@ router.put("/item/:menuItemId", auth, requireRole(['customer']), async (req, res
 
     if (quantity === 0) {
       cart.items.splice(itemIndex, 1);
+      if (cart.items.length === 0) {
+        cart.restaurantId = null;
+        cart.coupon = null;
+      }
     } else {
       cart.items[itemIndex].quantity = quantity;
     }
@@ -225,6 +229,10 @@ router.delete("/item/:menuItemId", auth, requireRole(['customer']), async (req, 
     }
 
     cart.items.splice(itemIndex, 1);
+    if (cart.items.length === 0) {
+      cart.restaurantId = null;
+      cart.coupon = null;
+    }
     await cart.calculateTotal();
     await cart.save();
 
