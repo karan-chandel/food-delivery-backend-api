@@ -17,10 +17,17 @@ const baseAllowlist = [
   "https://delivery-hub-pi.vercel.app"
 ];
 
+// Enforce JWT_SECRET in production
+if (process.env.NODE_ENV === "production" && !process.env.JWT_SECRET) {
+  throw new Error("FATAL: JWT_SECRET environment variable is required in production!");
+}
+
 module.exports = {
   PORT: process.env.PORT || 5050,
   MDB_URI: process.env.MDB_URI,
   API_VERSION: process.env.API_VERSION || "v1", 
   JWT_SECRET: process.env.JWT_SECRET || "your_fallback_jwt_secret_key_here",
   ALLOWLIST: [...baseAllowlist, ...envAllowlist],
+  // DEBUG_OTP is true in dev unless explicitly disabled, and false in production unless explicitly enabled
+  DEBUG_OTP: process.env.DEBUG_OTP === "true" || (process.env.NODE_ENV !== "production" && process.env.DEBUG_OTP !== "false")
 };

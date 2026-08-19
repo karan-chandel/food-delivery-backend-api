@@ -1,5 +1,13 @@
 module.exports = (err, req, res, next) => {
-  res.status(err.status || 500).json({
-    error: err.message || "Internal Server Error",
+  const status = err.status || 500;
+  const message = process.env.NODE_ENV === "production" && status === 500
+    ? "Internal Server Error"
+    : (err.message || "Internal Server Error");
+
+  // Log error in all environments for debugging
+  console.error("❌ Error caught by global handler:", err);
+
+  res.status(status).json({
+    error: message,
   });
 };

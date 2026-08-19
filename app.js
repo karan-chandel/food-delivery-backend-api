@@ -91,6 +91,12 @@ app.get('/test-socket', (req, res) => {
 // ✅ Serve static files from uploads directory (ADD THIS LINE)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// Socket.io middleware Injection
+app.use((req, res, next) => {
+    req.io = req.app.get("io");
+    next();
+});
+
 // Routes 
 app.use(`/api/${API_VERSION}/auth`, require('./routes/auth'));
 app.use(`/api/${API_VERSION}/contact-us`, require('./routes/contactUs'));
@@ -108,10 +114,6 @@ app.use(`/api/${API_VERSION}/admin`, require("./routes/admin/tickets"));
 app.use(`/api/${API_VERSION}/tickets`, require("./routes/tickets"));
 app.use(`/api/${API_VERSION}/coupons`, couponRoutes);
 
-app.use((req, res, next) => {
-    req.io = req.app.get("io");
-    next();
-});
 app.use(errorHandler);
 
 module.exports = app;

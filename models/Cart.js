@@ -74,14 +74,45 @@ cartSchema.methods.calculateTotal = async function () {
     if (menuItem) {
       let price = menuItem.discountedPrice || menuItem.price;
 
-      if (item.variant?.price) {
-        price = item.variant.price;
+      // Secure variant price lookup
+      if (item.variant && item.variant.name) {
+        const dbVariant = menuItem.variants.find(v => v.name === item.variant.name);
+        if (dbVariant) {
+          price = dbVariant.price;
+          item.variant.price = dbVariant.price; // sync corrected price back to cart item
+        } else {
+          // If variant is spoofed or invalid, clear variant and use base price
+          price = menuItem.discountedPrice || menuItem.price;
+          item.variant = undefined;
+        }
       }
 
-      if (item.addons?.length) {
-        item.addons.forEach(a => {
-          price += (a.price || 0);
-        });
+      // Secure addons price lookup
+      if (item.addons && item.addons.length) {
+        const secureAddons = [];
+        let addonPriceSum = 0;
+
+        for (const a of item.addons) {
+          let foundAddonItem = null;
+          for (const group of menuItem.addonGroups) {
+            const match = group.items.find(groupItem => groupItem.name === a.name);
+            if (match) {
+              foundAddonItem = match;
+              break;
+            }
+          }
+
+          if (foundAddonItem) {
+            addonPriceSum += foundAddonItem.price;
+            secureAddons.push({
+              name: foundAddonItem.name,
+              price: foundAddonItem.price
+            });
+          }
+        }
+
+        price += addonPriceSum;
+        item.addons = secureAddons; // sync corrected addons back to cart item
       }
 
       item.price = price;
