@@ -6,9 +6,12 @@ const Notification = require('../models/Notification');
 // ✅ GET user notifications
 router.get('/my-notifications', auth, async (req, res) => {
     try {
+        const userId = req.admin ? req.admin._id : req.user._id;
+        const userModel = req.admin ? 'Admin' : req.user.constructor.modelName;
+
         const notifications = await Notification.find({
-            userId: req.user._id,
-            userModel: req.user.constructor.modelName
+            userId,
+            userModel
         })
         .sort({ createdAt: -1 })
         .limit(50);
@@ -29,9 +32,12 @@ router.get('/my-notifications', auth, async (req, res) => {
 // ✅ GET unread notification count
 router.get('/unread-count', auth, async (req, res) => {
     try {
+        const userId = req.admin ? req.admin._id : req.user._id;
+        const userModel = req.admin ? 'Admin' : req.user.constructor.modelName;
+
         const count = await Notification.countDocuments({
-            userId: req.user._id,
-            userModel: req.user.constructor.modelName,
+            userId,
+            userModel,
             read: false
         });
 
@@ -50,10 +56,14 @@ router.get('/unread-count', auth, async (req, res) => {
 // ✅ MARK notification as read
 router.patch('/:notificationId/read', auth, async (req, res) => {
     try {
+        const userId = req.admin ? req.admin._id : req.user._id;
+        const userModel = req.admin ? 'Admin' : req.user.constructor.modelName;
+
         const notification = await Notification.findOneAndUpdate(
             {
                 _id: req.params.notificationId,
-                userId: req.user._id
+                userId,
+                userModel
             },
             {
                 read: true,
@@ -84,10 +94,13 @@ router.patch('/:notificationId/read', auth, async (req, res) => {
 // ✅ MARK ALL notifications as read
 router.post('/mark-all-read', auth, async (req, res) => {
     try {
+        const userId = req.admin ? req.admin._id : req.user._id;
+        const userModel = req.admin ? 'Admin' : req.user.constructor.modelName;
+
         await Notification.updateMany(
             {
-                userId: req.user._id,
-                userModel: req.user.constructor.modelName,
+                userId,
+                userModel,
                 read: false
             },
             {
@@ -111,9 +124,13 @@ router.post('/mark-all-read', auth, async (req, res) => {
 // ✅ DELETE notification
 router.delete('/:notificationId', auth, async (req, res) => {
     try {
+        const userId = req.admin ? req.admin._id : req.user._id;
+        const userModel = req.admin ? 'Admin' : req.user.constructor.modelName;
+
         const notification = await Notification.findOneAndDelete({
             _id: req.params.notificationId,
-            userId: req.user._id
+            userId,
+            userModel
         });
 
         if (!notification) {

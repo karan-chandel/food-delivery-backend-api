@@ -1012,6 +1012,15 @@ food-delivery-CBE/
 │   ├── config.js ..................... App configuration (PORT, DB_URI, API_VERSION)
 │   └── adminPermissions.js ........... Admin role-based permissions
 │
+├── ⚙️ CONTROLLERS/ (Decoupled Business Logic)
+│   ├── authController.js ............. Auth, verification, registration, profile & ratings
+│   ├── cartController.js ............. Cart operations & coupon application
+│   ├── contactUsController.js ........ User inquiry & query handling logic
+│   ├── couponController.js ........... Coupon creation, validation & management
+│   ├── orderController.js ............ Order creation, checkout, status tracking & reviews
+│   ├── riderController.js ............ Rider profile, availability, locations & deliveries
+│   └── superAdminController.js ....... System verifications, dashboard analytics & tickets
+│
 ├── 🛡️ MIDDLEWARES/ (Request Processing)
 │   ├── auth.js ....................... JWT verification & user loading
 │   ├── cors.js ....................... CORS policy enforcement
@@ -1033,22 +1042,22 @@ food-delivery-CBE/
 │   ├── Admin.js ...................... Admin user information
 │   └── RestaurantUser.js ............. Restaurant staff management
 │
-├── 🚀 ROUTES/ (API Endpoints & Controllers)
-│   ├── auth.js ....................... Authentication routes (register, login, verify)
-│   ├── cart.js ....................... Shopping cart operations
-│   ├── menu.js ....................... Menu item management
-│   ├── order.js ...................... Order creation & tracking
+├── 🚀 ROUTES/ (API Endpoint Mappings)
+│   ├── auth.js ....................... Route definitions pointing to authController.js
+│   ├── cart.js ....................... Route definitions pointing to cartController.js
+│   ├── menu.js ....................... Menu item management (mapped to controllers)
+│   ├── order.js ...................... Route definitions pointing to orderController.js
 │   ├── restaurants.js ................ Restaurant listing & info
-│   ├── rider.js ...................... Rider operations
+│   ├── rider.js ...................... Route definitions pointing to riderController.js
 │   ├── notificationRoutes.js ......... Notification endpoints
-│   ├── tickets.js .................... User ticket routes
-│   ├── super-admin.js ................ Super admin operations
+│   ├── tickets.js .................... User support tickets routes
+│   ├── super-admin.js ................ Route definitions pointing to superAdminController.js
 │   │
 │   └── 📁 admin/ (Admin-specific routes)
-│       └── tickets.js ................ Admin ticket management
+│       └── tickets.js ................ Admin ticket management routes
 │
 │   └── 📁 super-admin/ (Super admin routes)
-│       └── tickets.js ................ Super admin ticket management
+│       └── tickets.js ................ Super admin ticket management routes
 │
 ├── 📥 UPLOADS/ (File Storage)
 │   ├── menu-items/ ................... Menu item images

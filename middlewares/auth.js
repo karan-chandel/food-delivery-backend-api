@@ -46,24 +46,19 @@ const authenticateToken = async (req, res, next) => {
       req.user = decoded; // For compatibility with existing code
       
     } else {
-      // ✅ REGULAR USER TOKEN - Check both User collection AND role-specific collections
-      let user = await User.findById(decoded.userId);
-      // console.log("🔐 Found in User collection:", user ? "Yes" : "No");
-      
-      // If not found in User collection, check role-specific collections
+      // ✅ REGULAR USER TOKEN - Check role-specific collections first to resolve actual Mongoose model
+      let user = null;
+      if (decoded.role === 'customer') {
+        user = await Customer.findById(decoded.userId);
+      } else if (decoded.role === 'rider') {
+        user = await Rider.findById(decoded.userId);
+      } else if (decoded.role === 'restaurant') {
+        user = await RestaurantUser.findById(decoded.userId);
+      }
+
+      // Fallback to base User collection if not found in role-specific collection
       if (!user) {
-        // console.log("🔐 Checking role-specific collections for user:", decoded.userId);
-        
-        if (decoded.role === 'customer') {
-          user = await Customer.findById(decoded.userId);
-          // console.log("🔐 Found in Customer collection:", user ? "Yes" : "No");
-        } else if (decoded.role === 'rider') {
-          user = await Rider.findById(decoded.userId);
-          // console.log("🔐 Found in Rider collection:", user ? "Yes" : "No");
-        } else if (decoded.role === 'restaurant') {
-          user = await RestaurantUser.findById(decoded.userId);
-          // console.log("🔐 Found in RestaurantUser collection:", user ? "Yes" : "No");
-        }
+        user = await User.findById(decoded.userId);
       }
       
       if (!user) {
