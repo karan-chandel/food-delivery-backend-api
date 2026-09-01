@@ -6,7 +6,7 @@
 **Framework:** Node.js + Express.js  
 **Database:** MongoDB  
 **Real-time Communication:** Socket.io  
-**Author:** Karan Kumer-svg  
+**Author:** Er. Karan -svg  
 
 ---
 
