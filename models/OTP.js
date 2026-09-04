@@ -19,7 +19,7 @@ const otpSchema = new mongoose.Schema({
   expiresAt: {
     type: Date,
     required: true,
-    index: { expires: '10m' } // Auto delete after 10 minutes
+    index: { expires: 0 } // Auto delete exactly at expiration timestamp
   },
   attempts: {
     type: Number,

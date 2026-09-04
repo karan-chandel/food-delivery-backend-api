@@ -76,16 +76,16 @@ if (minOrderAmount) {
     // Pagination
     const skip = (page - 1) * limit;
 
-    // Get restaurants with pagination
-    const restaurants = await Restaurant.find(filter)
-      .sort(sortOptions)
-      .skip(skip)
-      .limit(parseInt(limit))
-      .select('name images rating deliveryTime minOrderAmount cuisine address isOpen deliveryFee openingHours');
-      //.select('name images rating deliveryTime minOrderAmount cuisine address isOpen deliveryFee totalRatings openingHours');
-
-    // Get total count for pagination
-    const total = await Restaurant.countDocuments(filter);
+    // Get restaurants and total count in parallel with lean queries
+    const [restaurants, total] = await Promise.all([
+      Restaurant.find(filter)
+        .sort(sortOptions)
+        .skip(skip)
+        .limit(parseInt(limit))
+        .select('name images rating deliveryTime minOrderAmount cuisine address isOpen deliveryFee openingHours')
+        .lean(),
+      Restaurant.countDocuments(filter)
+    ]);
     const totalPages = Math.ceil(total / limit);
 
     res.json({
@@ -132,8 +132,14 @@ router.get("/:id", async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    // Get restaurant details
-    const restaurant = await Restaurant.findById(id);
+    // Get restaurant details and active menu items in parallel with lean queries
+    const [restaurant, menuItems] = await Promise.all([
+      Restaurant.findById(id).lean(),
+      MenuItem.find({ 
+        restaurantId: id,
+        isAvailable: true 
+      }).sort({ category: 1, price: 1 }).lean()
+    ]);
     
     if (!restaurant || !restaurant.isActive) {
       return res.status(404).json({
@@ -141,12 +147,6 @@ router.get("/:id", async (req, res, next) => {
         error: "Restaurant not found"
       });
     }
-
-    // Get active menu items grouped by category
-    const menuItems = await MenuItem.find({ 
-      restaurantId: id,
-      isAvailable: true 
-    }).sort({ category: 1, price: 1 });
 
     // Group menu items by category
     const menuByCategory = menuItems.reduce((acc, item) => {

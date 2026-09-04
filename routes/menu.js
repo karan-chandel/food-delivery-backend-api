@@ -15,7 +15,7 @@ router.get("/restaurant/:restaurantId", async (req, res, next) => {
     const { category, isVeg, minPrice, maxPrice, sortBy = 'name', sortOrder = 'asc' } = req.query;
 
     // ✅ Validate restaurant
-    const restaurant = await Restaurant.findById(restaurantId);
+    const restaurant = await Restaurant.findById(restaurantId).lean();
     if (!restaurant || !restaurant.isActive) {
       return res.status(404).json({
         success: false,

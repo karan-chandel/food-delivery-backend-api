@@ -133,5 +133,9 @@ rating: {
 restaurantSchema.index({ cuisine: 1 });
 restaurantSchema.index({ 'rating.average': -1 });
 restaurantSchema.index({ ownerId: 1 });
+// High-throughput compound indexes for restaurant listing & search filters
+restaurantSchema.index({ isActive: 1, isOpen: 1, 'address.city': 1 });
+restaurantSchema.index({ isActive: 1, 'rating.average': -1 });
+restaurantSchema.index({ isActive: 1, minOrderAmount: 1 });
 
 module.exports = mongoose.model('Restaurant', restaurantSchema);

@@ -7,6 +7,7 @@ const Rider = require('../models/Rider');
 const RestaurantUser = require('../models/RestaurantUser');
 const Order = require('../models/Order');
 const Restaurant = require("../models/Restaurant");
+const Notification = require("../models/Notification");
 const { createNotification, createRestaurantNotifications } = require('../utils/notificationHelper');
 
 function initializeSocket(server) {
@@ -31,6 +32,9 @@ function initializeSocket(server) {
         restaurants: new Map(),
         admins: new Map()
     };
+
+    // Grace period timer map for transient network disconnects (elevators, tunnels)
+    const pendingRiderDisconnects = new Map();
 
     // ✅ Helper functions
     const findOrderById = async (orderId) => {
@@ -243,7 +247,15 @@ function initializeSocket(server) {
             console.log(`👤 SOCKET: Customer ${socket.userName} joined customers room`);
 
         } else if (socket.userRole === 'rider') {
-            connectedUsers.riders.set(socket.userId.toString(), socket.id);
+            const riderIdStr = socket.userId.toString();
+            // Cancel any pending disconnect timer if rider reconnects within grace period
+            if (pendingRiderDisconnects.has(riderIdStr)) {
+                clearTimeout(pendingRiderDisconnects.get(riderIdStr));
+                pendingRiderDisconnects.delete(riderIdStr);
+                console.log(`🏍️ SOCKET: Rider ${socket.userName} reconnected within grace period — offline timer cancelled`);
+            }
+
+            connectedUsers.riders.set(riderIdStr, socket.id);
             socket.join('riders_room');
             socket.join('available_riders');
             console.log(`🏍️ SOCKET: Rider ${socket.userName} joined riders room`);
@@ -288,7 +300,10 @@ function initializeSocket(server) {
         // ✅ Order.js: New order received (from restaurant)
         socket.on('new_order_received', async (data) => {
             try {
-                console.log(`🏪 SOCKET: Restaurant new order - ${data.orderId}`);
+                if (socket.userRole !== 'restaurant' && !socket.isAdmin) {
+                    return console.warn(`⚠️ [Security Alert] Blocked unauthorized new_order_received from role: ${socket.userRole}`);
+                }
+                console.log(`🏪 SOCKET: Restaurant new order - ${data?.orderId}`);
 
                 io.to(`restaurant_${data.restaurantId}`).emit('restaurant_new_order', {
                     type: 'new_order',
@@ -309,7 +324,10 @@ function initializeSocket(server) {
         // ✅ Order.js: Order confirmed (to customer)
         socket.on('order_confirmed', async (data) => {
             try {
-                console.log(`👤 SOCKET: Customer order confirmed - ${data.orderId}`);
+                if (socket.userRole !== 'restaurant' && !socket.isAdmin) {
+                    return console.warn(`⚠️ [Security Alert] Blocked unauthorized order_confirmed from role: ${socket.userRole}`);
+                }
+                console.log(`👤 SOCKET: Customer order confirmed - ${data?.orderId}`);
 
                 io.to(`user_${data.customerId}`).emit('customer_order_confirmed', {
                     type: 'order_confirmed',
@@ -332,7 +350,10 @@ function initializeSocket(server) {
         // ✅ Order.js: New order admin (BUG FIX: space removed)
         socket.on('new_order_admin', async (data) => {
             try {
-                console.log(`📊 SOCKET: Admin new order - ${data.orderId}`);
+                if (socket.userRole !== 'restaurant' && !socket.isAdmin) {
+                    return console.warn(`⚠️ [Security Alert] Blocked unauthorized new_order_admin from role: ${socket.userRole}`);
+                }
+                console.log(`📊 SOCKET: Admin new order - ${data?.orderId}`);
 
                 io.to('admin_dashboard_room').emit('admin_new_order', {
                     type: 'new_order',
@@ -353,7 +374,10 @@ function initializeSocket(server) {
         // ✅ Order.js: Rider UI update
         socket.on('rider_ui_update', async (data) => {
             try {
-                console.log(`🏍️ SOCKET: Rider new job - ${data.orderId}`);
+                if (socket.userRole !== 'restaurant' && !socket.isAdmin) {
+                    return console.warn(`⚠️ [Security Alert] Blocked unauthorized rider_ui_update from role: ${socket.userRole}`);
+                }
+                console.log(`🏍️ SOCKET: Rider new job - ${data?.orderId}`);
 
                 io.to('riders_room').emit('rider_new_job', {
                     type: 'new_delivery',
@@ -851,7 +875,6 @@ function initializeSocket(server) {
         // ✅ Delete notification
         socket.on('delete_notification', async (data) => {
             try {
-                const Notification = require('../models/Notification');
                 const { notificationId } = data;
 
                 const notification = await Notification.findByIdAndDelete(notificationId);
@@ -878,7 +901,6 @@ function initializeSocket(server) {
         // ✅ Clear all notifications
         socket.on('clear_all_notifications', async () => {
             try {
-                const Notification = require('../models/Notification');
                 await Notification.deleteMany({ userId: socket.userId });
 
                 socket.emit('all_notifications_cleared', {
@@ -897,7 +919,6 @@ function initializeSocket(server) {
         // ✅ Get unread notifications count
         socket.on('get_unread_count', async () => {
             try {
-                const Notification = require('../models/Notification');
                 const count = await Notification.countDocuments({
                     userId: socket.userId,
                     read: false
@@ -920,25 +941,45 @@ function initializeSocket(server) {
         socket.on('disconnect', async (reason) => {
             console.log(`🔌 SOCKET: ${socket.userName} disconnected: ${reason}`);
 
-            // Remove from connected users
+            // Remove from connected users safely
             if (socket.userId && socket.userRole) {
-                const roleKey = `${socket.userRole}s`;
-                if (connectedUsers[roleKey]) {
-                    connectedUsers[roleKey].delete(socket.userId.toString());
+                const normalizedRole = socket.userRole.includes('admin') ? 'admins' : `${socket.userRole}s`;
+                if (connectedUsers[normalizedRole]) {
+                    connectedUsers[normalizedRole].delete(socket.userId.toString());
                 }
 
-                // If rider disconnects, update status
+                // If rider disconnects, apply 45-second debounce grace period
+                // to prevent database thrashing from elevator or tunnel glitches
                 if (socket.userRole === 'rider') {
-                    await Rider.findByIdAndUpdate(socket.userId, {
-                        isOnline: false,
-                        lastLogout: new Date()
-                    }).catch(console.error);
+                    const riderIdStr = socket.userId.toString();
+                    const riderName = socket.userName;
 
-                    io.to('admin_dashboard_room').emit('rider_disconnected', {
-                        riderId: socket.userId,
-                        riderName: socket.userName,
-                        timestamp: new Date()
-                    });
+                    const timer = setTimeout(async () => {
+                        try {
+                            // Check if rider reconnected during the grace period
+                            if (connectedUsers.riders.has(riderIdStr)) {
+                                return;
+                            }
+
+                            await Rider.findByIdAndUpdate(riderIdStr, {
+                                isOnline: false,
+                                lastLogout: new Date()
+                            });
+
+                            io.to('admin_dashboard_room').emit('rider_disconnected', {
+                                riderId: riderIdStr,
+                                riderName: riderName,
+                                timestamp: new Date()
+                            });
+                            console.log(`🏍️ SOCKET: Rider ${riderName} (${riderIdStr}) marked offline after grace period`);
+                        } catch (err) {
+                            console.error('❌ SOCKET: Delayed rider disconnect error:', err.message);
+                        } finally {
+                            pendingRiderDisconnects.delete(riderIdStr);
+                        }
+                    }, 45000); // 45 seconds grace period
+
+                    pendingRiderDisconnects.set(riderIdStr, timer);
                 }
             }
         });

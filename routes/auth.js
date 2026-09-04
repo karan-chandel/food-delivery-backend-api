@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const authController = require("../controllers/authController");
 const { auth, requireRole } = require("../middlewares/auth");
+const { otpLimiter } = require("../middlewares/security");
 const multer = require('multer');
 
 // Storage configuration using memory storage (Buffer streams to Cloudinary)
@@ -82,7 +83,7 @@ const handleUploadErrors = (err, req, res, next) => {
 };
 
 // Endpoints
-router.post("/send-otp", authController.sendOtp);
+router.post("/send-otp", otpLimiter, authController.sendOtp);
 router.post("/verify-otp", authController.verifyOtp);
 
 router.get("/profile", auth, authController.getProfile);

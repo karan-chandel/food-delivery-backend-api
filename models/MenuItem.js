@@ -59,4 +59,9 @@ const menuItemSchema = new mongoose.Schema({
   timestamps: true 
 });
 
+// Compound indexes for high-speed menu queries
+menuItemSchema.index({ restaurantId: 1, isAvailable: 1, category: 1 });
+menuItemSchema.index({ restaurantId: 1, price: 1 });
+menuItemSchema.index({ restaurantId: 1, isVeg: 1 });
+
 module.exports = mongoose.model('MenuItem', menuItemSchema);

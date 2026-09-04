@@ -176,9 +176,11 @@ orderSchema.pre('save', function (next) {
   next();
 });
 
-// Index for delivery queries
+// Index for delivery and order history queries
 orderSchema.index({ status: 1 });
-orderSchema.index({ riderId: 1 });
+orderSchema.index({ riderId: 1, status: 1 });
+orderSchema.index({ customerId: 1, createdAt: -1 });
+orderSchema.index({ restaurantId: 1, status: 1, createdAt: -1 });
 orderSchema.index({ "deliveryAddress.coordinates.lat": 1, "deliveryAddress.coordinates.lng": 1 });
 
 module.exports = mongoose.model('Order', orderSchema);
