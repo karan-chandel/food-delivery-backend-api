@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
-const superAdminController = require("../controllers/superAdminController");
-const { auth, requireRole, requireAdmin } = require("../middlewares/auth");
+const superAdminController = require("../../controllers/superAdminController");
+const { auth, requireRole, requireAdmin } = require("../../middlewares/auth");
 
 // ✅ PERMISSION MIDDLEWARE DEFINITION FOR ROUTING LAYER
 const requirePermission = (module, action) => {

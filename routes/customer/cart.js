@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
-const cartController = require("../controllers/cartController");
-const { auth, requireRole } = require("../middlewares/auth");
+const cartController = require("../../controllers/cartController");
+const { auth, requireRole } = require("../../middlewares/auth");
 
 // All routes require authentication and customer role
 router.use(auth);

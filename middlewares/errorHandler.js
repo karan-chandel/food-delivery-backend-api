@@ -8,6 +8,8 @@ module.exports = (err, req, res, next) => {
   console.error("❌ Error caught by global handler:", err);
 
   res.status(status).json({
+    success: false,
     error: message,
+    message: message
   });
 };

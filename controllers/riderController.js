@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Rider = require('../models/Rider');
 const Order = require('../models/Order');
@@ -358,7 +359,7 @@ exports.getAvailableOrders = async (req, res, next) => {
 
     const availableOrders = await Order.find({
       status: 'ready_for_pickup',
-      riderId: { $exists: false }
+      $or: [{ riderId: { $exists: false } }, { riderId: null }]
     })
       .populate('restaurantId', 'name address coordinates')
       .populate('customerId', 'name phone')
@@ -409,7 +410,14 @@ exports.acceptOrder = async (req, res, next) => {
       });
     }
 
-    const order = await Order.findOne({ orderId: req.params.orderId })
+    const orderQuery = {
+      $or: [
+        { orderId: req.params.orderId },
+        ...(mongoose.Types.ObjectId.isValid(req.params.orderId) ? [{ _id: req.params.orderId }] : [])
+      ]
+    };
+
+    const order = await Order.findOne(orderQuery)
       .populate('restaurantId', 'name coordinates')
       .populate('customerId', 'name phone');
 
@@ -459,7 +467,6 @@ exports.acceptOrder = async (req, res, next) => {
 
     rider.isAvailable = false;
     rider.currentOrder = order._id;
-    rider.totalDeliveries = (rider.totalDeliveries || 0) + 1;
 
     await Promise.all([order.save(), rider.save()]);
 
@@ -549,10 +556,14 @@ exports.updateOrderStatusByRider = async (req, res, next) => {
     }
 
     const rider = await Rider.findById(req.user._id);
-    const order = await Order.findOne({
-      orderId: req.params.orderId,
+    const orderQuery = {
+      $or: [
+        { orderId: req.params.orderId },
+        ...(mongoose.Types.ObjectId.isValid(req.params.orderId) ? [{ _id: req.params.orderId }] : [])
+      ],
       riderId: rider._id
-    })
+    };
+    const order = await Order.findOne(orderQuery)
       .populate('restaurantId', 'name')
       .populate('customerId', 'name');
 

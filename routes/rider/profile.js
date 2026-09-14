@@ -1,14 +1,14 @@
 const express = require('express');
 const router = express.Router();
-const riderController = require('../controllers/riderController');
-const { auth, requireRole } = require('../middlewares/auth');
+const riderController = require('../../controllers/riderController');
+const { auth, requireRole } = require('../../middlewares/auth');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 
 const riderDocsStorage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const riderDir = path.join(__dirname, '../uploads/riders');
+    const riderDir = path.join(__dirname, '../../uploads/riders');
     if (!fs.existsSync(riderDir)) {
       fs.mkdirSync(riderDir, { recursive: true });
     }
@@ -46,19 +46,16 @@ const handleUploadErrors = (err, req, res, next) => {
   next();
 };
 
-// All routes require rider or admin auth
 router.use(auth);
-router.use(requireRole(['rider', 'admin']));
+router.use(requireRole(['rider', 'admin', 'super_admin']));
 
+router.get('/', riderController.getRiderProfile);
 router.get('/profile', riderController.getRiderProfile);
+
+router.put('/', riderUpload.fields([{ name: 'licensePhoto', maxCount: 1 }, { name: 'vehiclePhoto', maxCount: 1 }]), handleUploadErrors, riderController.updateRiderProfile);
 router.put('/profile', riderUpload.fields([{ name: 'licensePhoto', maxCount: 1 }, { name: 'vehiclePhoto', maxCount: 1 }]), handleUploadErrors, riderController.updateRiderProfile);
+
 router.put('/availability', riderController.updateRiderAvailability);
-router.put('/location', riderController.updateRiderLocation);
-router.get('/orders/available', riderController.getAvailableOrders);
-router.put('/orders/:orderId/accept', riderController.acceptOrder);
-router.get('/orders/accepted', riderController.getAcceptedOrders);
-router.put('/orders/:orderId/status', riderController.updateOrderStatusByRider);
-router.get('/orders/current', riderController.getCurrentOrders);
 router.get('/earnings', riderController.getRiderEarnings);
 router.get('/history', riderController.getRiderHistory);
 

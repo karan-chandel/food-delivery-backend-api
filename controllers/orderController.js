@@ -1,5 +1,14 @@
+const mongoose = require("mongoose");
 const Order = require("../models/Order");
 const Cart = require("../models/Cart");
+
+// Helper to query order by either custom orderId string or Mongo _id
+const getOrderQuery = (id) => ({
+  $or: [
+    { orderId: id },
+    ...(mongoose.Types.ObjectId.isValid(id) ? [{ _id: id }] : [])
+  ]
+});
 const Restaurant = require("../models/Restaurant");
 const MenuItem = require("../models/MenuItem");
 const Customer = require("../models/Customer");
@@ -459,7 +468,7 @@ exports.getMyOrders = async (req, res, next) => {
 exports.getOrderById = async (req, res, next) => {
   try {
     const { orderId } = req.params;
-    const order = await Order.findOne({ orderId })
+    const order = await Order.findOne(getOrderQuery(orderId))
       .populate('customerId', 'name phone addresses')
       .populate('restaurantId', 'name address contact images coordinates openingHours')
       .populate('riderId', 'name phone vehicleNo vehicleType currentLocation')
@@ -518,7 +527,7 @@ exports.updateOrderStatus = async (req, res, next) => {
       return res.status(400).json({ success: false, error: "Invalid status" });
     }
 
-    const order = await Order.findOne({ orderId })
+    const order = await Order.findOne(getOrderQuery(orderId))
       .populate('customerId', 'name phone addresses')
       .populate('restaurantId', 'name address contact images coordinates')
       .populate('riderId', 'name phone vehicleNo vehicleType currentLocation');
@@ -687,7 +696,7 @@ exports.updateOrderStatus = async (req, res, next) => {
 exports.cancelOrder = async (req, res, next) => {
   try {
     const { orderId } = req.params;
-    const order = await Order.findOne({ orderId }).populate('customerId');
+    const order = await Order.findOne(getOrderQuery(orderId)).populate('customerId');
 
     if (!order) return res.status(404).json({ success: false, error: "Order not found" });
 
@@ -763,7 +772,7 @@ exports.assignRider = async (req, res, next) => {
     const { orderId } = req.params;
     const { riderId } = req.body;
 
-    const order = await Order.findOne({ orderId });
+    const order = await Order.findOne(getOrderQuery(orderId));
     if (!order) return res.status(404).json({ success: false, error: "Order not found" });
 
     const restUser = await RestaurantUser.findById(req.user._id);
@@ -842,7 +851,7 @@ exports.assignRider = async (req, res, next) => {
 exports.trackOrder = async (req, res, next) => {
   try {
     const { orderId } = req.params;
-    const order = await Order.findOne({ orderId })
+    const order = await Order.findOne(getOrderQuery(orderId))
       .populate('customerId', 'name phone addresses')
       .populate('restaurantId', 'name address contact images coordinates')
       .populate('riderId', 'name phone vehicleNo vehicleType currentLocation')
@@ -850,7 +859,7 @@ exports.trackOrder = async (req, res, next) => {
 
     if (!order) return res.status(404).json({ success: false, error: "Order not found" });
 
-    if (req.user.role === 'customer' && order.customerId._id.toString() !== req.user._id)
+    if (req.user.role === 'customer' && order.customerId._id.toString() !== req.user._id.toString())
       return res.status(403).json({ success: false, error: "Not authorized" });
 
     if (req.user.role === 'restaurant') {
@@ -859,7 +868,7 @@ exports.trackOrder = async (req, res, next) => {
         return res.status(403).json({ success: false, error: "Not authorized" });
     }
 
-    if (req.user.role === 'rider' && (!order.riderId || order.riderId._id.toString() !== req.user._id))
+    if (req.user.role === 'rider' && (!order.riderId || order.riderId._id.toString() !== req.user._id.toString()))
       return res.status(403).json({ success: false, error: "Not authorized" });
 
     const orderObj = order.toObject();
@@ -949,7 +958,7 @@ exports.addOrderReview = async (req, res, next) => {
     const { orderId } = req.params;
     const { restaurantRating, restaurantReview, riderRating, riderReview } = req.body;
 
-    const order = await Order.findOne({ orderId }).populate('customerId');
+    const order = await Order.findOne(getOrderQuery(orderId)).populate('customerId');
     if (!order) return res.status(404).json({ success: false, error: "Order not found" });
 
     if (order.customerId._id.toString() !== req.user._id.toString())
@@ -971,21 +980,47 @@ exports.addOrderReview = async (req, res, next) => {
     await order.save();
 
     if (restaurantRating) {
-      await Restaurant.findByIdAndUpdate(order.restaurantId, {
-        $inc: {
-          'rating.totalRatings': 1,
-          'rating.totalScore': restaurantRating
+      const restaurant = await Restaurant.findById(order.restaurantId);
+      if (restaurant) {
+        restaurant.rating = restaurant.rating || { average: 0, count: 0, reviews: [] };
+        const currentCount = restaurant.rating.count || 0;
+        const currentAvg = restaurant.rating.average || 0;
+        const newCount = currentCount + 1;
+        const newAvg = (currentAvg * currentCount + restaurantRating) / newCount;
+        restaurant.rating.count = newCount;
+        restaurant.rating.average = Math.round(newAvg * 10) / 10;
+        if (restaurantReview) {
+          restaurant.rating.reviews.push({
+            customerId: order.customerId._id || order.customerId,
+            orderId: order.orderId,
+            rating: restaurantRating,
+            review: restaurantReview,
+            createdAt: new Date()
+          });
         }
-      });
+        await restaurant.save();
+      }
     }
 
     if (riderRating && order.riderId) {
-      await Rider.findByIdAndUpdate(order.riderId, {
-        $inc: {
-          totalRatings: 1,
-          averageRating: riderRating
-        }
-      });
+      const rider = await Rider.findById(order.riderId);
+      if (rider) {
+        const currentCount = rider.totalRatings || 0;
+        const currentAvg = rider.averageRating || 0;
+        const newCount = currentCount + 1;
+        const newAvg = (currentAvg * currentCount + riderRating) / newCount;
+        rider.totalRatings = newCount;
+        rider.averageRating = Math.round(newAvg * 10) / 10;
+        rider.ratings = rider.ratings || [];
+        rider.ratings.push({
+          customerId: order.customerId._id || order.customerId,
+          orderId: order.orderId,
+          rating: riderRating,
+          feedback: riderReview,
+          createdAt: new Date()
+        });
+        await rider.save();
+      }
     }
 
     if (restaurantRating) {

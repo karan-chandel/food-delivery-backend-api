@@ -7,7 +7,8 @@ const Admin = require('../models/Admin');
 
 async function createNotification(data) {
     try {
-        const { userId, title, message, type, notificationData = {}, priority = 'medium' } = data;
+        const { userId, title, message, type, priority = 'medium' } = data;
+        const notificationPayload = data.data || data.notificationData || {};
         
         // User model detect karo
         let userModel = 'User';
@@ -39,7 +40,7 @@ async function createNotification(data) {
             title,
             message,
             type,
-            data: notificationData,
+            data: notificationPayload,
             priority,
             read: false
         });

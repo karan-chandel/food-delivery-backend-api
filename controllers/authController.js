@@ -538,7 +538,7 @@ exports.rateRider = async (req, res, next) => {
       return res.status(404).json({ success: false, error: "Rider not found" });
 
     const riderAlreadyRated = rider.ratings.find(
-      (r) => r.orderId === orderId && r.customerId.toString() === userId
+      (r) => r.orderId === orderId && r.customerId.toString() === userId.toString()
     );
 
     if (riderAlreadyRated)

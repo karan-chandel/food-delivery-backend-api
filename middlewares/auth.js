@@ -110,13 +110,13 @@ const requireRole = (roles) => {
   return (req, res, next) => {
     // Check if it's admin access
     if (req.admin) {
-      if (!roles.includes(req.admin.role)) {
-        return res.status(403).json({ 
-          success: false, 
-          error: `Access denied. Required roles: ${roles.join(', ')}` 
-        });
+      if (req.admin.role === 'super_admin' || roles.includes(req.admin.role)) {
+        return next();
       }
-      return next();
+      return res.status(403).json({ 
+        success: false, 
+        error: `Access denied. Required roles: ${roles.join(', ')}` 
+      });
     }
     
     // Check if it's user access

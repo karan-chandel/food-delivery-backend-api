@@ -1,3 +1,7 @@
 node_modules/
 .env
-*.md
+.env.*
+uploads/
+.legacy_routes_backup/
+*.log
+.DS_Store

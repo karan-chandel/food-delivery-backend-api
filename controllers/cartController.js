@@ -129,10 +129,12 @@ exports.addToCart = async (req, res, next) => {
     await cart.populate('restaurantId', 'name deliveryTime minOrderAmount deliveryFee taxRate');
 
     const io = req.app.get("io");
-    io.to(userId.toString()).emit("cart updated", {
-      message: "Item added to cart successfully",
-      cart
-    });
+    if (io) {
+      io.to(userId.toString()).emit("cart updated", {
+        message: "Item added to cart successfully",
+        cart
+      });
+    }
 
     res.json({
       success: true,

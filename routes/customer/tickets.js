@@ -1,10 +1,10 @@
 // routes/tickets.js
 const express = require("express");
 const router = express.Router();
-const Ticket = require("../models/Ticket");
-const { auth, requireRole } = require("../middlewares/auth");
-const { upload, handleUploadErrors } = require("../middlewares/upload");
-const { getUserInfoForTicket, getOrderInfoForTicket } = require("../utils/ticketUserHelper");
+const Ticket = require("../../models/Ticket");
+const { auth, requireRole } = require("../../middlewares/auth");
+const { upload, handleUploadErrors } = require("../../middlewares/upload");
+const { getUserInfoForTicket, getOrderInfoForTicket } = require("../../utils/ticketUserHelper");
 
 // ✅ HELPER: Check if user owns the ticket
 // const canUserAccessTicket = (ticket, userId) => {

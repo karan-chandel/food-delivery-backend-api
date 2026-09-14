@@ -4,8 +4,6 @@ const logger = require("morgan");
 const corsMiddleware = require("./middlewares/cors");
 const errorHandler = require("./middlewares/errorHandler");
 
-const couponRoutes = require("./routes/coupon");
-
 
 const { API_VERSION } = require("./config/config");
 const path = require("path");
@@ -102,22 +100,38 @@ app.use((req, res, next) => {
     next();
 });
 
-// Routes 
-app.use(`/api/${API_VERSION}/auth`, require('./routes/auth'));
-app.use(`/api/${API_VERSION}/contact-us`, require('./routes/contactUs'));
-app.use(`/api/${API_VERSION}/register`, require('./routes/register'));
-app.use(`/api/${API_VERSION}/restaurants`, require('./routes/restaurants'));
-app.use(`/api/${API_VERSION}/menu`, require('./routes/menu'));
-app.use(`/api/${API_VERSION}/orders`, require('./routes/order'));
-app.use(`/api/${API_VERSION}/cart`, require("./routes/cart"));
-app.use(`/api/${API_VERSION}/rider`, require("./routes/rider"));
-app.use(`/api/${API_VERSION}/notifications`, require("./routes/notificationRoutes"));
-app.use(`/api/${API_VERSION}/super-admin`, require("./routes/super-admin"));
-// Ticket Routes Registration
-app.use(`/api/${API_VERSION}/super-admin/tickets`, require("./routes/super-admin/tickets"));
-app.use(`/api/${API_VERSION}/admin`, require("./routes/admin/tickets"));
-app.use(`/api/${API_VERSION}/tickets`, require("./routes/tickets"));
-app.use(`/api/${API_VERSION}/coupons`, couponRoutes);
+// ==================== PORTAL-BASED ROUTE GATEWAYS ====================
+app.use(`/api/${API_VERSION}/customer`, require('./routes/customer'));
+app.use(`/api/${API_VERSION}/restaurant`, require('./routes/restaurant'));
+app.use(`/api/${API_VERSION}/rider`, require('./routes/rider'));
+app.use(`/api/${API_VERSION}/admin`, require('./routes/admin'));
+
+// ==================== LEGACY COMPATIBILITY LAYER ====================
+// Zero downtime for existing frontends by routing legacy paths to modular portals
+app.use(`/api/${API_VERSION}/auth`, require('./routes/customer/auth'));
+app.use(`/api/${API_VERSION}/auth`, require('./routes/rider/auth'));
+app.use(`/api/${API_VERSION}/auth`, require('./routes/restaurant/auth'));
+app.use(`/api/${API_VERSION}/contact-us`, require('./routes/customer/contactUs'));
+app.use(`/api/${API_VERSION}/contact-us`, require('./routes/admin/contactUs'));
+app.use(`/api/${API_VERSION}/register`, require('./routes/rider/auth'));
+app.use(`/api/${API_VERSION}/register`, require('./routes/restaurant/auth'));
+app.use(`/api/${API_VERSION}/restaurants`, require('./routes/customer/restaurants'));
+app.use(`/api/${API_VERSION}/restaurants`, require('./routes/restaurant/profile'));
+app.use(`/api/${API_VERSION}/menu`, require('./routes/customer/menu'));
+app.use(`/api/${API_VERSION}/menu`, require('./routes/restaurant/menu'));
+app.use(`/api/${API_VERSION}/orders`, require('./routes/customer/orders'));
+app.use(`/api/${API_VERSION}/orders`, require('./routes/restaurant/orders'));
+app.use(`/api/${API_VERSION}/orders`, require('./routes/rider/orders'));
+app.use(`/api/${API_VERSION}/orders`, require('./routes/rider/location'));
+app.use(`/api/${API_VERSION}/cart`, require('./routes/customer/cart'));
+app.use(`/api/${API_VERSION}/rider`, require('./routes/rider'));
+app.use(`/api/${API_VERSION}/notifications`, require('./routes/customer/notifications'));
+app.use(`/api/${API_VERSION}/super-admin`, require('./routes/admin/superAdmin'));
+app.use(`/api/${API_VERSION}/super-admin/tickets`, require('./routes/admin/superAdminTickets'));
+app.use(`/api/${API_VERSION}/admin/tickets`, require('./routes/admin/tickets'));
+app.use(`/api/${API_VERSION}/tickets`, require('./routes/customer/tickets'));
+app.use(`/api/${API_VERSION}/coupons`, require('./routes/restaurant/coupons'));
+app.use(`/api/${API_VERSION}/coupons`, require('./routes/customer/coupons'));
 
 app.use(errorHandler);
 
