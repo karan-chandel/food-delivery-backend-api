@@ -40,11 +40,13 @@ router.get("/my-restaurant", async (req, res, next) => {
   }
 });
 
-// ✅ Get restaurant by ownerId
-router.get("/owner/:ownerId", async (req, res, next) => {
+// ✅ Get restaurant by ownerId (supports /owner/:ownerId and /res/owner/:ownerId)
+const getRestaurantByOwner = async (req, res, next) => {
   try {
     const { ownerId } = req.params;
-    const restaurant = await Restaurant.findOne({ ownerId });
+    const restaurant = await Restaurant.findOne({
+      $or: [{ ownerId }, { createdBy: ownerId }]
+    });
 
     if (!restaurant) {
       return res.status(404).json({
@@ -89,7 +91,10 @@ router.get("/owner/:ownerId", async (req, res, next) => {
   } catch (err) {
     next(err);
   }
-});
+};
+
+router.get("/owner/:ownerId", getRestaurantByOwner);
+router.get("/res/owner/:ownerId", getRestaurantByOwner);
 
 // ✅ Create restaurant
 router.post("/", async (req, res, next) => {

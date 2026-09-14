@@ -5,3 +5,4 @@ uploads/
 .legacy_routes_backup/
 *.log
 .DS_Store
+*.md    

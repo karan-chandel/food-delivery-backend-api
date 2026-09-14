@@ -102,38 +102,72 @@ exports.verifyOtp = async (req, res, next) => {
     let roleSpecificUser = null;
     let isNewUser = false;
 
+    // Check if role-specific profiles already exist in DB
+    const existingCustomer = await Customer.findOne({ phone });
+    const existingRestaurantUser = await RestaurantUser.findOne({ phone });
+    const existingRider = await Rider.findOne({ phone });
+
     if (!baseUser) {
       isNewUser = true;
 
+      // Reuse existing role ID if available so foreign keys stay linked
+      const existingId = existingRestaurantUser?._id || existingCustomer?._id || existingRider?._id;
+
       const baseUserData = {
         phone,
-        name: name || `User${phone.slice(-4)}`,
-        email: email || null,
+        name: name || existingRestaurantUser?.name || existingCustomer?.name || existingRider?.name || `User${phone.slice(-4)}`,
+        email: email || existingRestaurantUser?.email || existingCustomer?.email || null,
         role: otpRole,
         isVerified: isVerified,
         lastLogin: new Date()
       };
 
-      baseUser = await User.create(baseUserData);
-      console.log(`... New ${otpRole} user created: ${baseUser._id}`);
+      if (existingId) {
+        baseUserData._id = existingId;
+      }
 
-      switch (otpRole) {
-        case 'customer':
+      baseUser = await User.create(baseUserData);
+      console.log(`... New/relinked ${otpRole} user created: ${baseUser._id}`);
+    } else {
+      const updateData = { lastLogin: new Date() };
+      if (name) updateData.name = name;
+      if (email) updateData.email = email;
+
+      baseUser = await User.findByIdAndUpdate(baseUser._id, updateData, { new: true });
+      console.log(`... Existing user logged in for role: ${otpRole}`);
+    }
+
+    // Ensure role-specific profile exists for the requested portal
+    const profileData = {
+      phone: baseUser.phone,
+      name: baseUser.name,
+      email: baseUser.email,
+      _id: baseUser._id,
+      lastLogin: new Date()
+    };
+
+    switch (otpRole) {
+      case 'customer':
+        roleSpecificUser = await Customer.findById(baseUser._id) || existingCustomer;
+        if (!roleSpecificUser) {
           roleSpecificUser = await Customer.create({
-            ...baseUserData,
-            _id: baseUser._id,
+            ...profileData,
             favorites: [],
             orders: [],
             loyaltyPoints: 0,
             totalOrders: 0,
             totalSpent: 0
           });
-          break;
+        } else {
+          roleSpecificUser = await Customer.findByIdAndUpdate(roleSpecificUser._id, { lastLogin: new Date() }, { new: true });
+        }
+        break;
 
-        case 'rider':
+      case 'rider':
+        roleSpecificUser = await Rider.findById(baseUser._id) || existingRider;
+        if (!roleSpecificUser) {
           roleSpecificUser = await Rider.create({
-            ...baseUserData,
-            _id: baseUser._id,
+            ...profileData,
             vehicleNo: additionalData?.vehicleNo || 'NOT_SET',
             vehicleType: additionalData?.vehicleType || 'bike',
             licenseNumber: additionalData?.licenseNumber || null,
@@ -143,65 +177,45 @@ exports.verifyOtp = async (req, res, next) => {
             totalDeliveries: 0,
             rating: 0
           });
-          break;
+        } else {
+          roleSpecificUser = await Rider.findByIdAndUpdate(roleSpecificUser._id, { lastLogin: new Date() }, { new: true });
+        }
+        break;
 
-        case 'restaurant':
+      case 'restaurant':
+        roleSpecificUser = await RestaurantUser.findById(baseUser._id) || existingRestaurantUser;
+        if (!roleSpecificUser) {
           roleSpecificUser = await RestaurantUser.create({
-            ...baseUserData,
-            _id: baseUser._id,
+            ...profileData,
             restaurantId: additionalData?.restaurantId || null,
             businessName: additionalData?.businessName || 'NOT_SET',
             gstNumber: additionalData?.gstNumber || null,
             totalEarnings: 0,
             totalOrders: 0
           });
-          break;
-
-        default:
-          roleSpecificUser = await Customer.create({
-            ...baseUserData,
-            _id: baseUser._id
-          });
-      }
-
-      if (address && baseUser.role === 'customer') {
-        const customer = await Customer.findById(baseUser._id);
-        if (customer) {
-          customer.addresses.push(address);
-          await customer.save();
+        } else {
+          roleSpecificUser = await RestaurantUser.findByIdAndUpdate(roleSpecificUser._id, { lastLogin: new Date() }, { new: true });
         }
-      }
-    } else {
-      if (baseUser.role !== otpRole) {
-        return res.status(400).json({
-          success: false,
-          error: `This phone number is already registered as ${baseUser.role}. Please use ${baseUser.role} login or use a different phone number.`
-        });
-      }
+        break;
 
-      const updateData = { lastLogin: new Date() };
-      if (name) updateData.name = name;
-      if (email) updateData.email = email;
+      default:
+        roleSpecificUser = await Customer.findById(baseUser._id);
+    }
 
-      baseUser = await User.findByIdAndUpdate(baseUser._id, updateData, { new: true });
-      console.log(`... Existing ${baseUser.role} user logged in`);
-
-      switch (baseUser.role) {
-        case 'customer':
-          roleSpecificUser = await Customer.findByIdAndUpdate(baseUser._id, updateData, { new: true });
-          break;
-        case 'rider':
-          roleSpecificUser = await Rider.findByIdAndUpdate(baseUser._id, updateData, { new: true });
-          break;
-        case 'restaurant':
-          roleSpecificUser = await RestaurantUser.findByIdAndUpdate(baseUser._id, updateData, { new: true });
-          break;
+    if (address && otpRole === 'customer') {
+      const customer = await Customer.findById(baseUser._id);
+      if (customer) {
+        customer.addresses.push(address);
+        await customer.save();
       }
     }
 
     const token = jwt.sign(
       {
-        userId: baseUser._id, phone: baseUser.phone, role: baseUser.role, isVerified: baseUser.isVerified
+        userId: baseUser._id,
+        phone: baseUser.phone,
+        role: otpRole,
+        isVerified: baseUser.isVerified
       },
       JWT_SECRET,
       { expiresIn: "30d" }
