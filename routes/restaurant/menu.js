@@ -165,7 +165,18 @@ router.put("/:id", upload.array("images", 5), handleUploadErrors, async (req, re
       });
       const newImages = await Promise.all(uploadPromises);
 
-      if (req.body.replaceImages === "true") {
+      let keptImages = [];
+      if (req.body.existingImages) {
+        try {
+          const parsed = typeof req.body.existingImages === "string" ? JSON.parse(req.body.existingImages) : req.body.existingImages;
+          if (Array.isArray(parsed)) {
+            keptImages = parsed.map(img => typeof img === "string" ? { url: img, filename: null, path: null } : img);
+          }
+        } catch (e) {
+          console.warn("Invalid existingImages data", e.message);
+        }
+        updateData.images = [...keptImages, ...newImages];
+      } else if (req.body.replaceImages === "true") {
         updateData.images = newImages;
       } else {
         updateData.images = [...(menuItem.images || []), ...newImages];
@@ -174,7 +185,7 @@ router.put("/:id", upload.array("images", 5), handleUploadErrors, async (req, re
       try {
         const urls = typeof req.body.images === "string" ? JSON.parse(req.body.images) : req.body.images;
         if (Array.isArray(urls)) {
-          updateData.images = urls.map(url => ({ url, filename: null, path: null }));
+          updateData.images = urls.map(img => typeof img === "string" ? { url: img, filename: null, path: null } : img);
         }
       } catch (e) {
         console.warn("Invalid images array", e.message);

@@ -5,6 +5,7 @@ const RestaurantUser = require("../../models/RestaurantUser");
 const MenuItem = require("../../models/MenuItem");
 const Order = require("../../models/Order");
 const { auth, requireRole } = require("../../middlewares/auth");
+const { upload, uploadBufferToCloudinary, handleUploadErrors } = require("../../middlewares/upload");
 
 // All profile management routes require restaurant authentication
 router.use(auth);
@@ -44,9 +45,20 @@ router.get("/my-restaurant", async (req, res, next) => {
 const getRestaurantByOwner = async (req, res, next) => {
   try {
     const { ownerId } = req.params;
-    const restaurant = await Restaurant.findOne({
-      $or: [{ ownerId }, { createdBy: ownerId }]
-    });
+    let restaurant = null;
+
+    if (ownerId && ownerId.length === 24) {
+      restaurant = await Restaurant.findOne({
+        $or: [{ ownerId }, { createdBy: ownerId }]
+      });
+
+      if (!restaurant) {
+        const restaurantUser = await RestaurantUser.findById(ownerId);
+        if (restaurantUser && restaurantUser.restaurantId) {
+          restaurant = await Restaurant.findById(restaurantUser.restaurantId);
+        }
+      }
+    }
 
     if (!restaurant) {
       return res.status(404).json({
@@ -96,11 +108,59 @@ const getRestaurantByOwner = async (req, res, next) => {
 router.get("/owner/:ownerId", getRestaurantByOwner);
 router.get("/res/owner/:ownerId", getRestaurantByOwner);
 
-// ✅ Create restaurant
-router.post("/", async (req, res, next) => {
+// ✅ Create restaurant (supports file upload OR image URLs)
+router.post("/", upload.array("images", 5), handleUploadErrors, async (req, res, next) => {
   try {
+    let images = [];
+    if (req.files && req.files.length > 0) {
+      const uploadPromises = req.files.map(async (file) => {
+        if (file.buffer) {
+          const result = await uploadBufferToCloudinary(file.buffer, "hungry-hub/restaurants");
+          return result.secure_url;
+        }
+        return file.path;
+      });
+      images = await Promise.all(uploadPromises);
+    } else if (req.body.images) {
+      try {
+        const parsed = typeof req.body.images === "string" ? JSON.parse(req.body.images) : req.body.images;
+        images = Array.isArray(parsed) ? parsed : [parsed];
+      } catch (e) {
+        images = [req.body.images];
+      }
+    } else if (req.body.image) {
+      images = [req.body.image];
+    }
+
+    let address = req.body.address;
+    if (typeof address === "string") {
+      try { address = JSON.parse(address); } catch (e) {}
+    }
+
+    let contact = req.body.contact;
+    if (typeof contact === "string") {
+      try { contact = JSON.parse(contact); } catch (e) {}
+    }
+
+    let cuisine = req.body.cuisine;
+    if (typeof cuisine === "string") {
+      try { cuisine = JSON.parse(cuisine); } catch (e) {
+        cuisine = cuisine.split(",").map((c) => c.trim());
+      }
+    }
+
+    let openingHours = req.body.openingHours;
+    if (typeof openingHours === "string") {
+      try { openingHours = JSON.parse(openingHours); } catch (e) {}
+    }
+
     const restaurantData = {
       ...req.body,
+      images,
+      address,
+      contact,
+      cuisine,
+      openingHours,
       ownerId: req.user._id,
       createdBy: req.user._id
     };
