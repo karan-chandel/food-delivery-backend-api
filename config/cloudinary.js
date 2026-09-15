@@ -6,7 +6,7 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-const uploadBufferToCloudinary = (buffer, folder = "hungry-hub/menu-items") => {
+const uploadBufferToCloudinary = (buffer, folder = "Zewito/menu-items") => {
   return new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
       {

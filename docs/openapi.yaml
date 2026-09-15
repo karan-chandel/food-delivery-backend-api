@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Hungry-Hub Food Delivery API
+  title: Zewito Food Delivery API
   description: Minimal OpenAPI spec covering auth, restaurants, menu, and orders (initial draft)
   version: 1.0.0
 servers:

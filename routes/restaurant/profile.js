@@ -115,7 +115,7 @@ router.post("/", upload.array("images", 5), handleUploadErrors, async (req, res,
     if (req.files && req.files.length > 0) {
       const uploadPromises = req.files.map(async (file) => {
         if (file.buffer) {
-          const result = await uploadBufferToCloudinary(file.buffer, "hungry-hub/restaurants");
+          const result = await uploadBufferToCloudinary(file.buffer, "Zewito/restaurants");
           return result.secure_url;
         }
         return file.path;
@@ -134,12 +134,12 @@ router.post("/", upload.array("images", 5), handleUploadErrors, async (req, res,
 
     let address = req.body.address;
     if (typeof address === "string") {
-      try { address = JSON.parse(address); } catch (e) {}
+      try { address = JSON.parse(address); } catch (e) { }
     }
 
     let contact = req.body.contact;
     if (typeof contact === "string") {
-      try { contact = JSON.parse(contact); } catch (e) {}
+      try { contact = JSON.parse(contact); } catch (e) { }
     }
 
     let cuisine = req.body.cuisine;
@@ -151,7 +151,7 @@ router.post("/", upload.array("images", 5), handleUploadErrors, async (req, res,
 
     let openingHours = req.body.openingHours;
     if (typeof openingHours === "string") {
-      try { openingHours = JSON.parse(openingHours); } catch (e) {}
+      try { openingHours = JSON.parse(openingHours); } catch (e) { }
     }
 
     const restaurantData = {

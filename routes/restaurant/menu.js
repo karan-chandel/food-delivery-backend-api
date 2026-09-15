@@ -56,7 +56,7 @@ const addMenuItemHandler = async (req, res, next) => {
     if (req.files && req.files.length > 0) {
       const uploadPromises = req.files.map(async file => {
         if (file.buffer) {
-          const result = await uploadBufferToCloudinary(file.buffer, "hungry-hub/menu-items");
+          const result = await uploadBufferToCloudinary(file.buffer, "Zewito/menu-items");
           return {
             url: result.secure_url,
             filename: result.public_id,
@@ -117,7 +117,7 @@ const addMenuItemHandler = async (req, res, next) => {
           menuItem
         });
       }
-    } catch {}
+    } catch { }
 
     res.status(201).json({
       success: true,
@@ -158,7 +158,7 @@ router.put("/:id", upload.array("images", 5), handleUploadErrors, async (req, re
     if (req.files && req.files.length > 0) {
       const uploadPromises = req.files.map(async file => {
         if (file.buffer) {
-          const result = await uploadBufferToCloudinary(file.buffer, "hungry-hub/menu-items");
+          const result = await uploadBufferToCloudinary(file.buffer, "Zewito/menu-items");
           return { url: result.secure_url, filename: result.public_id, path: result.secure_url };
         }
         return { url: file.path, filename: file.filename, path: file.path };
@@ -215,7 +215,7 @@ router.put("/:id", upload.array("images", 5), handleUploadErrors, async (req, re
           menuItem: updatedMenu
         });
       }
-    } catch {}
+    } catch { }
 
     return res.json({
       success: true,
@@ -311,7 +311,7 @@ router.delete("/:id", async (req, res, next) => {
           menuItemId: id
         });
       }
-    } catch {}
+    } catch { }
 
     res.json({
       success: true,

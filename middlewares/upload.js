@@ -33,7 +33,7 @@ const upload = multer({
 });
 
 // ✅ Direct Cloudinary Stream Upload Helper (100% Native, zero peer-dep conflicts)
-const uploadBufferToCloudinary = (buffer, folder = "hungry-hub/menu-items") => {
+const uploadBufferToCloudinary = (buffer, folder = "Zewito/menu-items") => {
   return new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
       {

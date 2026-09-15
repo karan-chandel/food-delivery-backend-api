@@ -1,5 +1,5 @@
 # -------------------------------------------------------------
-# Production Dockerfile for FoodBE (Hungry-Hub Backend API)
+# Production Dockerfile for FoodBE (Zewito Backend API)
 # Node.js 20 on lightweight Alpine Linux
 # -------------------------------------------------------------
 

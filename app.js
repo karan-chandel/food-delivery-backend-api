@@ -38,7 +38,7 @@ if (!fs.existsSync(adminDir)) {
   console.log('📁 Admin upload directory created');
 }
 if (process.env.NODE_ENV === 'development') {
-    console.log('✅ Memory status logging initialized from app.js');
+  console.log('✅ Memory status logging initialized from app.js');
 
   setInterval(() => {
     const used = process.memoryUsage();
@@ -52,7 +52,7 @@ if (process.env.NODE_ENV === 'development') {
     console.log(
       `  ArrayBuffer : ${(used.arrayBuffers / 1024 / 1024).toFixed(2)} MB`,
     );
-  },  600000); 
+  }, 600000);
 }
 
 const { securityHeaders, mongoSanitize, globalApiLimiter } = require("./middlewares/security");
@@ -69,8 +69,8 @@ app.use("/api", globalApiLimiter);
 
 // Health check & API info - ADD THIS
 app.get('/', (req, res) => {
-  res.json({ 
-    message: 'Hungry-Hub Food Delivery API', 
+  res.json({
+    message: 'Zewito Food Delivery API',
     version: API_VERSION,
     status: 'active',
     endpoints: {
@@ -83,12 +83,12 @@ app.get('/', (req, res) => {
 });
 
 app.get('/test-socket', (req, res) => {
-    const io = req.app.get("io");
-    res.json({
-        ioExists: !!io,
-        appIoExists: !!req.app.get("io"),
-        message: io ? "Socket.io is ready" : "Socket.io not found"
-    });
+  const io = req.app.get("io");
+  res.json({
+    ioExists: !!io,
+    appIoExists: !!req.app.get("io"),
+    message: io ? "Socket.io is ready" : "Socket.io not found"
+  });
 });
 
 // ✅ Serve static files from uploads directory (ADD THIS LINE)
@@ -96,8 +96,8 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Socket.io middleware Injection
 app.use((req, res, next) => {
-    req.io = req.app.get("io");
-    next();
+  req.io = req.app.get("io");
+  next();
 });
 
 // ==================== PORTAL-BASED ROUTE GATEWAYS ====================

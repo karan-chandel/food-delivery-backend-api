@@ -681,11 +681,11 @@ exports.completeRider = async (req, res, next) => {
     };
 
     if (req.files?.licensePhoto?.[0]?.buffer) {
-      const result = await uploadBufferToCloudinary(req.files.licensePhoto[0].buffer, "hungry-hub/riders");
+      const result = await uploadBufferToCloudinary(req.files.licensePhoto[0].buffer, "Zewito/riders");
       riderData.licensePhoto = result.secure_url;
     }
     if (req.files?.vehiclePhoto?.[0]?.buffer) {
-      const result = await uploadBufferToCloudinary(req.files.vehiclePhoto[0].buffer, "hungry-hub/riders");
+      const result = await uploadBufferToCloudinary(req.files.vehiclePhoto[0].buffer, "Zewito/riders");
       riderData.vehiclePhoto = result.secure_url;
     }
 
@@ -841,7 +841,7 @@ exports.completeRestaurant = async (req, res, next) => {
       if (req.files?.restaurantImages && req.files.restaurantImages.length > 0) {
         const uploadPromises = req.files.restaurantImages.map(async file => {
           if (file.buffer) {
-            const res = await uploadBufferToCloudinary(file.buffer, "hungry-hub/restaurants");
+            const res = await uploadBufferToCloudinary(file.buffer, "Zewito/restaurants");
             return res.secure_url;
           }
           return file.path;
@@ -861,7 +861,7 @@ exports.completeRestaurant = async (req, res, next) => {
       if (req.files?.restaurantImages && req.files.restaurantImages.length > 0) {
         const uploadPromises = req.files.restaurantImages.map(async file => {
           if (file.buffer) {
-            const res = await uploadBufferToCloudinary(file.buffer, "hungry-hub/restaurants");
+            const res = await uploadBufferToCloudinary(file.buffer, "Zewito/restaurants");
             return res.secure_url;
           }
           return file.path;
