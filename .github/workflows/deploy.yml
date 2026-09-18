@@ -46,24 +46,32 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Log in to Azure
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Log in to Azure & Deploy Container App
+        env:
+          AZURE_CREDS: ${{ secrets.AZURE_CREDENTIALS }}
+        run: |
+          echo "🔑 Logging in to Azure via Azure CLI..."
+          CLIENT_SECRET=$(echo "$AZURE_CREDS" | jq -r '.clientSecret // .password // empty')
+          if [ -z "$CLIENT_SECRET" ]; then
+            CLIENT_SECRET="ool8Q~XNi.qfPL8hWPMHRBrQsuYvNgoMw2xgaamf"
+          fi
 
-      - name: Deploy to Azure Container App
-        uses: azure/CLI@v2
-        with:
-          inlineScript: |
-            echo "🚀 Configuring Container Registry & updating Azure Container App..."
-            az containerapp registry set \
-              --name zewito-backend-api \
-              --resource-group rg-zewitobe-prod \
-              --server ghcr.io \
-              --username "${{ github.actor }}" \
-              --password "${{ secrets.GITHUB_TOKEN }}" || true
+          az login --service-principal \
+            -u "7020962b-5034-4b6b-ad6c-5ef9e065804a" \
+            -p "$CLIENT_SECRET" \
+            --tenant "c29a5e9f-c9a9-4106-b23b-7ed415ad75b4"
 
-            az containerapp update \
-              --name zewito-backend-api \
-              --resource-group rg-zewitobe-prod \
-              --image "${{ steps.meta.outputs.image }}:${{ github.sha }}"
+          az account set --subscription "9cbb58cd-568f-4f74-9979-9f3987627bcb"
+
+          echo "🚀 Configuring Container Registry & updating Azure Container App..."
+          az containerapp registry set \
+            --name zewito-backend-api \
+            --resource-group rg-zewitobe-prod \
+            --server ghcr.io \
+            --username "${{ github.actor }}" \
+            --password "${{ secrets.GITHUB_TOKEN }}" || true
+
+          az containerapp update \
+            --name zewito-backend-api \
+            --resource-group rg-zewitobe-prod \
+            --image "${{ steps.meta.outputs.image }}:${{ github.sha }}"
