@@ -47,7 +47,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Log in to Azure
-        uses: azure/login@v2
+        uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
@@ -55,8 +55,15 @@ jobs:
         uses: azure/CLI@v2
         with:
           inlineScript: |
-            echo "🚀 Updating Azure Container App image..."
+            echo "🚀 Configuring Container Registry & updating Azure Container App..."
+            az containerapp registry set \
+              --name zewito-backend-api \
+              --resource-group rg-zewitobe-prod \
+              --server ghcr.io \
+              --username "${{ github.actor }}" \
+              --password "${{ secrets.GITHUB_TOKEN }}" || true
+
             az containerapp update \
               --name zewito-backend-api \
               --resource-group rg-zewitobe-prod \
-              --image ${{ steps.meta.outputs.image }}:${{ github.sha }}
+              --image "${{ steps.meta.outputs.image }}:${{ github.sha }}"
