@@ -63,13 +63,12 @@ jobs:
 
           az account set --subscription "9cbb58cd-568f-4f74-9979-9f3987627bcb"
 
-          echo "🚀 Configuring Container Registry & updating Azure Container App..."
-          az containerapp registry set \
+          echo "🚀 Updating Azure Container App with public GHCR image..."
+          # Since package is public, remove any stale/expired credentials from Azure to allow clean anonymous pull
+          az containerapp registry remove \
             --name zewito-backend-api \
             --resource-group rg-zewitobe-prod \
-            --server ghcr.io \
-            --username "${{ github.actor }}" \
-            --password "${{ secrets.GITHUB_TOKEN }}" || true
+            --server ghcr.io || true
 
           az containerapp update \
             --name zewito-backend-api \
