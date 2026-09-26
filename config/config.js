@@ -29,5 +29,5 @@ module.exports = {
   JWT_SECRET: process.env.JWT_SECRET || "your_fallback_jwt_secret_key_here",
   ALLOWLIST: [...baseAllowlist, ...envAllowlist],
   // DEBUG_OTP is true in dev unless explicitly disabled, and false in production unless explicitly enabled
-  DEBUG_OTP: process.env.DEBUG_OTP === "true" || (process.env.NODE_ENV !== "production" && process.env.DEBUG_OTP !== "false")
+  DEBUG_OTP: (process.env.DEBUG_OTP && ["true", "1"].includes(String(process.env.DEBUG_OTP).toLowerCase().trim())) || (process.env.NODE_ENV !== "production" && process.env.DEBUG_OTP !== "false")
 };

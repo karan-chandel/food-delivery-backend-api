@@ -78,14 +78,15 @@ const authenticateToken = async (req, res, next) => {
         });
       }
       
-      // ✅ Check verification for riders/restaurants (except for rider completion)
-    //   if (user.role !== 'customer' && !user.isVerified && 
-    // !req.originalUrl.includes('/rider/complete')
-    //   && 
-    // !req.originalUrl.includes('/restaurant/complete'))) {
-    if (user.role !== 'customer' && !user.isVerified && 
-    !req.originalUrl.includes('/rider/complete') && 
-    !req.originalUrl.includes('/restaurant/complete')) {
+      // ✅ Check verification for riders/restaurants (allow completion/onboarding routes)
+      const isCompletionRoute = 
+        req.originalUrl.includes('/rider/complete') ||
+        req.originalUrl.includes('/rider/auth/complete') ||
+        req.originalUrl.includes('/restaurant/complete') ||
+        req.originalUrl.includes('/restaurant/auth/complete') ||
+        (req.originalUrl.includes('/restaurants') && req.method === 'POST');
+
+      if (user.role !== 'customer' && !user.isVerified && !isCompletionRoute) {
         return res.status(403).json({ 
           success: false,
           error: `Your ${user.role} account is pending verification. Please contact admin.` 

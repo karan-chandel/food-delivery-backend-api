@@ -771,25 +771,57 @@ exports.getPendingVerifications = async (req, res, next) => {
         }
         else if (user.role === 'restaurant') {
           const restaurantUser = await RestaurantUser.findById(user._id)
-            .select("name email businessName gstNumber restaurantId bankAccountNumber bankIFSC upiId totalOrders totalEarnings");
+            .select("name email phone businessName gstNumber gstCertificate restaurantId bankAccountNumber bankIFSC upiId totalOrders totalEarnings");
 
-          if (restaurantUser) {
-            userDetails.name = restaurantUser.name || user.name;
-            userDetails.email = restaurantUser.email || user.email;
+          let restaurant = null;
+          if (restaurantUser?.restaurantId) {
+            restaurant = await Restaurant.findById(restaurantUser.restaurantId);
+          }
+          if (!restaurant) {
+            restaurant = await Restaurant.findOne({
+              $or: [{ ownerId: user._id }, { createdBy: user._id }]
+            });
+          }
 
-            userDetails.restaurantDetails = {
-              name: restaurantUser.name,
-              email: restaurantUser.email,
-              businessName: restaurantUser.businessName,
-              gstNumber: restaurantUser.gstNumber,
-              restaurantId: restaurantUser.restaurantId,
-              bankAccountNumber: restaurantUser.bankAccountNumber,
-              bankIFSC: restaurantUser.bankIFSC,
-              upiId: restaurantUser.upiId,
-              totalOrders: restaurantUser.totalOrders,
-              totalEarnings: restaurantUser.totalEarnings
+          const restaurantName = 
+            (restaurant?.name) || 
+            (restaurantUser?.businessName && restaurantUser.businessName !== 'NOT_SET' ? restaurantUser.businessName : null) || 
+            restaurantUser?.name || 
+            user.name;
+
+          userDetails.name = restaurantName;
+          userDetails.email = restaurant?.contact?.email || restaurantUser?.email || user.email;
+          userDetails.phone = restaurant?.contact?.phone || restaurantUser?.phone || user.phone;
+
+          if (restaurant?.address) {
+            userDetails.address = {
+              addressLine1: restaurant.address.addressLine1,
+              addressLine2: restaurant.address.addressLine2,
+              city: restaurant.address.city,
+              state: restaurant.address.state,
+              pincode: restaurant.address.pincode
             };
           }
+
+          userDetails.restaurantDetails = {
+            name: restaurantName,
+            businessName: restaurant?.name || (restaurantUser?.businessName !== 'NOT_SET' ? restaurantUser?.businessName : restaurantName),
+            email: userDetails.email,
+            phone: userDetails.phone,
+            gstNumber: restaurant?.gstNumber || restaurantUser?.gstNumber || null,
+            gstCertificate: restaurantUser?.gstCertificate || null,
+            restaurantId: restaurant?._id || restaurantUser?.restaurantId || null,
+            address: userDetails.address || null,
+            bankAccountNumber: restaurantUser?.bankAccountNumber || null,
+            bankIFSC: restaurantUser?.bankIFSC || null,
+            upiId: restaurantUser?.upiId || null,
+            totalOrders: restaurantUser?.totalOrders || 0,
+            totalEarnings: restaurantUser?.totalEarnings || 0,
+            cuisine: restaurant?.cuisine || [],
+            images: restaurant?.images || [],
+            hasRestaurantProfile: !!restaurant,
+            registrationComplete: !!(restaurant || (restaurantUser?.businessName && restaurantUser.businessName !== 'NOT_SET'))
+          };
         }
 
         return userDetails;
@@ -870,32 +902,45 @@ exports.verifyUser = async (req, res, next) => {
       }
     }
     else if (user.role === 'restaurant') {
-      const restaurantUser = await RestaurantUser.findById(userId);
-      const restaurant = await Restaurant.findOne({ ownerId: userId });
+      let restaurantUser = await RestaurantUser.findById(userId);
+      let restaurant = await Restaurant.findOne({
+        $or: [{ ownerId: userId }, { createdBy: userId }]
+      });
 
-      if (!restaurantUser) {
+      if (!restaurantUser && !restaurant) {
         return res.status(400).json({
           success: false,
           error: "Restaurant profile not found. Please complete registration first."
         });
       }
 
-      if (!restaurantUser.businessName || restaurantUser.businessName === 'NOT_SET') {
-        missingFields.push('businessName');
-      }
-      if (!restaurantUser.gstNumber) {
-        missingFields.push('gstNumber');
-      }
-
-      isRegistrationComplete = missingFields.length === 0;
-
-      if (!isRegistrationComplete) {
-        return res.status(400).json({
-          success: false,
-          error: `Restaurant registration incomplete. Missing fields: ${missingFields.join(', ')}. Please complete registration first.`,
-          missingFields: missingFields,
-          requiresRegistrationCompletion: true
+      if (!restaurantUser) {
+        restaurantUser = await RestaurantUser.create({
+          _id: userId,
+          phone: user.phone,
+          name: restaurant?.name || user.name,
+          email: restaurant?.contact?.email || user.email,
+          role: 'restaurant',
+          isVerified: true,
+          businessName: restaurant?.name || user.name,
+          restaurantId: restaurant?._id || null,
+          gstNumber: restaurant?.gstNumber || null
         });
+      } else {
+        const effectiveBusinessName = 
+          (restaurantUser.businessName && restaurantUser.businessName !== 'NOT_SET')
+            ? restaurantUser.businessName
+            : (restaurant?.name || user.name);
+
+        restaurantUser.businessName = effectiveBusinessName;
+        if (restaurant && !restaurantUser.restaurantId) {
+          restaurantUser.restaurantId = restaurant._id;
+        }
+        if (restaurant?.gstNumber && !restaurantUser.gstNumber) {
+          restaurantUser.gstNumber = restaurant.gstNumber;
+        }
+        restaurantUser.isVerified = true;
+        await restaurantUser.save();
       }
 
       if (restaurant) {

@@ -903,7 +903,17 @@ exports.completeRestaurant = async (req, res, next) => {
     }
 
     if (req.files?.gstCertificate && req.files.gstCertificate[0]) {
-      restaurantUser.gstCertificate = `/uploads/restaurants/${req.files.gstCertificate[0].filename}`;
+      const gstFile = req.files.gstCertificate[0];
+      if (gstFile.buffer) {
+        try {
+          const uploadRes = await uploadBufferToCloudinary(gstFile.buffer, "Zewito/restaurants/gst");
+          restaurantUser.gstCertificate = uploadRes.secure_url;
+        } catch (uploadErr) {
+          console.error("GST Certificate upload error:", uploadErr);
+        }
+      } else {
+        restaurantUser.gstCertificate = gstFile.path || (gstFile.filename ? `/uploads/restaurants/${gstFile.filename}` : null);
+      }
       await restaurantUser.save();
     }
 

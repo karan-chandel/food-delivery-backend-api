@@ -168,7 +168,9 @@ router.post("/", upload.array("images", 5), handleUploadErrors, async (req, res,
     const restaurant = await Restaurant.create(restaurantData);
 
     await RestaurantUser.findByIdAndUpdate(req.user._id, {
-      restaurantId: restaurant._id
+      restaurantId: restaurant._id,
+      businessName: restaurant.name,
+      gstNumber: req.body.gstNumber || null
     });
 
     res.status(201).json({

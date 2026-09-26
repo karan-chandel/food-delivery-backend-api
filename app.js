@@ -111,6 +111,8 @@ app.use(`/api/${API_VERSION}/admin`, require('./routes/admin'));
 app.use(`/api/${API_VERSION}/auth`, require('./routes/customer/auth'));
 app.use(`/api/${API_VERSION}/auth`, require('./routes/rider/auth'));
 app.use(`/api/${API_VERSION}/auth`, require('./routes/restaurant/auth'));
+app.use(`/api/${API_VERSION}/auth/restaurant`, require('./routes/restaurant/auth'));
+app.use(`/api/${API_VERSION}/auth/rider`, require('./routes/rider/auth'));
 app.use(`/api/${API_VERSION}/contact-us`, require('./routes/customer/contactUs'));
 app.use(`/api/${API_VERSION}/contact-us`, require('./routes/admin/contactUs'));
 app.use(`/api/${API_VERSION}/register`, require('./routes/rider/auth'));
