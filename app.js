@@ -101,39 +101,53 @@ app.use((req, res, next) => {
 });
 
 // ==================== PORTAL-BASED ROUTE GATEWAYS ====================
-app.use(`/api/${API_VERSION}/customer`, require('./routes/customer'));
-app.use(`/api/${API_VERSION}/restaurant`, require('./routes/restaurant'));
+// ⚠️  CORE PLATFORM ONLY — Catalog domain routes have been split out.
+// Restaurants, Menu, Cart, Coupons → zewito-catalog-service (port 4001)
+// Orders, Riders, Dispatch, Payments, Admin → this service (zewito-core-platform)
+
 app.use(`/api/${API_VERSION}/rider`, require('./routes/rider'));
 app.use(`/api/${API_VERSION}/admin`, require('./routes/admin'));
 
 // ==================== LEGACY COMPATIBILITY LAYER ====================
-// Zero downtime for existing frontends by routing legacy paths to modular portals
+// Auth routes — still served by core (JWT is issued here)
 app.use(`/api/${API_VERSION}/auth`, require('./routes/customer/auth'));
 app.use(`/api/${API_VERSION}/auth`, require('./routes/rider/auth'));
 app.use(`/api/${API_VERSION}/auth`, require('./routes/restaurant/auth'));
 app.use(`/api/${API_VERSION}/auth/restaurant`, require('./routes/restaurant/auth'));
 app.use(`/api/${API_VERSION}/auth/rider`, require('./routes/rider/auth'));
-app.use(`/api/${API_VERSION}/contact-us`, require('./routes/customer/contactUs'));
-app.use(`/api/${API_VERSION}/contact-us`, require('./routes/admin/contactUs'));
 app.use(`/api/${API_VERSION}/register`, require('./routes/rider/auth'));
 app.use(`/api/${API_VERSION}/register`, require('./routes/restaurant/auth'));
-app.use(`/api/${API_VERSION}/restaurants`, require('./routes/customer/restaurants'));
-app.use(`/api/${API_VERSION}/restaurants`, require('./routes/restaurant/profile'));
-app.use(`/api/${API_VERSION}/menu`, require('./routes/customer/menu'));
-app.use(`/api/${API_VERSION}/menu`, require('./routes/restaurant/menu'));
+
+// Orders — core domain
 app.use(`/api/${API_VERSION}/orders`, require('./routes/customer/orders'));
 app.use(`/api/${API_VERSION}/orders`, require('./routes/restaurant/orders'));
 app.use(`/api/${API_VERSION}/orders`, require('./routes/rider/orders'));
 app.use(`/api/${API_VERSION}/orders`, require('./routes/rider/location'));
-app.use(`/api/${API_VERSION}/cart`, require('./routes/customer/cart'));
+
+// Rider
 app.use(`/api/${API_VERSION}/rider`, require('./routes/rider'));
+
+// Restaurant profile & analytics (earnings, order aggregation)
+app.use(`/api/${API_VERSION}/restaurants`, require('./routes/restaurant/profile'));
+
+// Notifications, Support, Admin
 app.use(`/api/${API_VERSION}/notifications`, require('./routes/customer/notifications'));
+app.use(`/api/${API_VERSION}/contact-us`, require('./routes/customer/contactUs'));
+app.use(`/api/${API_VERSION}/contact-us`, require('./routes/admin/contactUs'));
 app.use(`/api/${API_VERSION}/super-admin`, require('./routes/admin/superAdmin'));
 app.use(`/api/${API_VERSION}/super-admin/tickets`, require('./routes/admin/superAdminTickets'));
 app.use(`/api/${API_VERSION}/admin/tickets`, require('./routes/admin/tickets'));
 app.use(`/api/${API_VERSION}/tickets`, require('./routes/customer/tickets'));
-app.use(`/api/${API_VERSION}/coupons`, require('./routes/restaurant/coupons'));
-app.use(`/api/${API_VERSION}/coupons`, require('./routes/customer/coupons'));
+
+// ── CATALOG DOMAIN — MOVED TO zewito-catalog-service ─────────────────────────
+// The following routes are now handled by zewito-catalog-service (port 4001):
+//   /api/v1/restaurants  → catalog-service/api/v1/customer/restaurants
+//   /api/v1/menu         → catalog-service/api/v1/customer/menu
+//   /api/v1/cart         → catalog-service/api/v1/customer/cart
+//   /api/v1/coupons      → catalog-service/api/v1/restaurant/coupons
+//
+// Update your frontend CATALOG_API_URL env var to point to catalog-service URL.
+// ─────────────────────────────────────────────────────────────────────────────
 
 app.use(errorHandler);
 
