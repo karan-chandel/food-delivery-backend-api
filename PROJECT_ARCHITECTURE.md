@@ -1,12 +1,16 @@
-# 🍔 HUNGRY-HUB FOOD DELIVERY BACKEND - PROJECT ARCHITECTURE & BLUEPRINT
+# 🍔 ZEWITO CORE PLATFORM - SYSTEM ARCHITECTURE & BLUEPRINT
 
-**Project Name:** Hungry-Hub Food Delivery Backend  
-**Version:** 1.0.0  
-**Type:** Real-time Food Delivery Management System  
+**Project Name:** Zewito Core Platform (`zewito-core-platform` / `FoodBE`)  
+**Version:** 2.0.0 (Microservices Split)  
+**Type:** Real-time Mission-Critical Food Delivery Engine  
 **Framework:** Node.js + Express.js  
-**Database:** MongoDB  
-**Real-time Communication:** Socket.io  
+**Database:** MongoDB Atlas (`food-delivery` DB)  
+**Real-time Communication:** Socket.io (Live GPS Tracking & Feeds)  
 **Author:** Er. Karan -svg  
+
+> ⚠️ **MICROSERVICES ARCHITECTURE NOTICE (2-Repo Architecture):**  
+> This repository is the **Core Platform** responsible strictly for Order State Machines, Payments, Rider Dispatch, WebSockets, Support Tickets, and Core Authentication.  
+> **Catalog Domain** (Restaurants listing, Menu Items, Shopping Cart, Coupons) has been decoupled into the dedicated microservice repository: **[`zewito-catalog-service`](https://github.com/covermantra-work/zewito-catalog-service)**.
 
 ---
 
@@ -14,7 +18,7 @@
 
 1. [Project Overview](#project-overview)
 2. [Technology Stack](#technology-stack)
-3. [System Architecture](#system-architecture)
+3. [System Architecture (2-Repo Split)](#system-architecture)
 4. [Database Schema & Models](#database-schema--models)
 5. [API Endpoints & Routes](#api-endpoints--routes)
 6. [Real-time Features (Socket.io)](#real-time-features-socketio)
@@ -29,13 +33,13 @@
 
 ## 🎯 PROJECT OVERVIEW
 
-Hungry-Hub is a comprehensive food delivery backend system that manages:
+Zewito Core Platform is the central, mission-critical backend governing:
 
-- **Customers:** Browse restaurants, place orders, track deliveries
-- **Restaurants:** Manage menu items, accept/reject orders, track deliveries
-- **Riders:** Accept delivery jobs, real-time GPS tracking, earning management
-- **Admins:** System-wide monitoring, user management, ticket support
-- **Super Admins:** Full system control, analytics, super-admin features
+- **Order State Machine:** End-to-end order lifecycle management from placement to delivery.
+- **Riders & Logistics:** Live GPS tracking, geo-proximity job dispatch, and rider payout ledgers.
+- **Payments:** Razorpay webhook verification and payment transactions.
+- **Support & Admin:** Role-based support ticket systems, user management, and system monitoring.
+- **Real-Time Sockets:** Live location tracking, order event streams, and real-time dashboard telemetry.
 
 **Key Differentiators:**
 - Real-time order tracking with live GPS coordinates
@@ -140,33 +144,31 @@ ization
     └────────┬──────────────────────────────────────────────┘
              │
     ┌────────▼──────────────────────────────────────────────┐
-    │          API Routes & Controllers                      │
-    │  ├─ /api/v1/auth                                      │
-    │  ├─ /api/v1/restaurants                               │
-    │  ├─ /api/v1/menu                                      │
-    │  ├─ /api/v1/orders                                    │
-    │  ├─ /api/v1/cart                                      │
-    │  ├─ /api/v1/rider                                     │
-    │  ├─ /api/v1/notifications                             │
-    │  ├─ /api/v1/tickets                                   │
-    │  └─ /api/v1/super-admin                               │
+    │          CORE API Routes & Controllers                │
+    │  ├─ /api/v1/auth          (User, Rider, Admin Auth)   │
+    │  ├─ /api/v1/orders        (Order State Machine)       │
+    │  ├─ /api/v1/rider         (Rider Dispatch & Payouts)  │
+    │  ├─ /api/v1/tickets       (Support Tickets)           │
+    │  ├─ /api/v1/notifications (User & Rider Alerts)       │
+    │  ├─ /api/v1/super-admin   (Platform Management)       │
+    │  │                                                    │
+    │  │ ⚠️ CATALOG DOMAIN (Moved to zewito-catalog-service):│
+    │  │ ├─ /api/v1/restaurants (Port 4001 / Catalog Cloud) │
+    │  │ ├─ /api/v1/menu        (Port 4001 / Catalog Cloud) │
+    │  │ ├─ /api/v1/cart        (Port 4001 / Catalog Cloud) │
+    │  │ └─ /api/v1/coupons     (Port 4001 / Catalog Cloud) │
     └────────┬──────────────────────────────────────────────┘
              │
     ┌────────▼──────────────────────────────────────────────┐
-    │           Mongoose Models & Schemas                    │
-    │  ├─ User (Base user collection)                        │
-    │  ├─ Customer                                           │
-    │  ├─ Rider                                              │
-    │  ├─ Restaurant                                         │
-    │  ├─ RestaurantUser                                     │
-    │  ├─ Admin                                              │
-    │  ├─ Order                                              │
-    │  ├─ MenuItem                                           │
-    │  ├─ Cart                                               │
-    │  ├─ Notification                                       │
-    │  ├─ Ticket                                             │
-    │  ├─ OTP                                                │
-    │  └─ Notification                                       │
+    │           Core Mongoose Models & Schemas              │
+    │  ├─ User (Base identity & credentials)                │
+    │  ├─ Customer (Customer profile & addresses)           │
+    │  ├─ Rider (Vehicle, KYC, Wallet, Live Location)       │
+    │  ├─ Order (Order lifecycle, items snapshot, payment)  │
+    │  ├─ Ticket (Support ticket conversations)             │
+    │  ├─ Notification (Alert history)                      │
+    │  ├─ OTP (Phone verification codes)                    │
+    │  └─ Admin (Role-based staff permissions)              │
     └────────┬──────────────────────────────────────────────┘
              │
     ┌────────▼──────────────────────────────────────────────┐
