@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const { JWT_SECRET, ALLOWLIST } = require('../config/config');
 const Admin = require('../models/Admin');
 const Customer = require('../models/Customer');
+const User = require('../models/User');
 const Rider = require('../models/Rider');
 const RestaurantUser = require('../models/RestaurantUser');
 const Order = require('../models/Order');
@@ -187,6 +188,10 @@ function initializeSocket(server) {
                     user = await Rider.findById(decoded.userId);
                 } else if (role === 'restaurant') {
                     user = await RestaurantUser.findById(decoded.userId);
+                }
+
+                if (!user) {
+                    user = await User.findById(decoded.userId);
                 }
 
                 if (!user) {

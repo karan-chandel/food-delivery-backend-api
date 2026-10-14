@@ -149,6 +149,21 @@ app.use(`/api/${API_VERSION}/tickets`, require('./routes/customer/tickets'));
 // Update your frontend CATALOG_API_URL env var to point to catalog-service URL.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Catalog routes fallback for local monolithic dev
+app.use(`/api/${API_VERSION}/restaurants`, require('./routes/customer/restaurants'));
+app.use(`/api/${API_VERSION}/menu`, require('./routes/customer/menu'));
+app.get(`/api/${API_VERSION}/food-items`, async (req, res, next) => {
+  try {
+    const MenuItem = require('./models/MenuItem');
+    const items = await MenuItem.find({ isAvailable: true })
+      .populate('restaurantId', 'name address isOpen deliveryTime rating')
+      .lean();
+    res.json({ success: true, data: items, count: items.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
 app.use(errorHandler);
 
 module.exports = app;
