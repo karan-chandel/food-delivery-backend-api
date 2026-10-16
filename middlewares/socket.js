@@ -403,6 +403,9 @@ function initializeSocket(server) {
         // ✅ Order.js: Order status update
         socket.on('order_status_update', async (data) => {
             try {
+                if (!socket.userRole || !['restaurant', 'rider', 'admin'].includes(socket.userRole)) {
+                    return console.warn(`⚠️ [Security Alert] Blocked unauthorized order_status_update from role: ${socket.userRole}`);
+                }
                 console.log(`🔄 SOCKET: Order status update - ${data.orderId}: ${data.status}`);
 
                 // Customer ko
@@ -441,6 +444,9 @@ function initializeSocket(server) {
         // ✅ Order.js: UI payment update (COD)
         socket.on('ui_payment_update', async (data) => {
             try {
+                if (!socket.userRole || !['rider', 'admin'].includes(socket.userRole)) {
+                    return console.warn(`⚠️ [Security Alert] Blocked unauthorized ui_payment_update from role: ${socket.userRole}`);
+                }
                 console.log(`💳 SOCKET: UI payment update - ${data.orderId}`);
 
                 io.to(`user_${data.customerId}`).emit('payment_status_changed', {

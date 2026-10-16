@@ -140,8 +140,13 @@ exports.createOrder = async (req, res, next) => {
     let subtotal = 0;
     const orderItems = [];
 
+    // 🔥 Batch query all menu items at once (Eliminates N+1 DB latency bottleneck)
+    const menuItemIds = items.map(i => i.menuItemId).filter(Boolean);
+    const menuItems = await MenuItem.find({ _id: { $in: menuItemIds } });
+    const menuItemMap = new Map(menuItems.map(m => [m._id.toString(), m]));
+
     for (const item of items) {
-      const menuItem = await MenuItem.findById(item.menuItemId);
+      const menuItem = menuItemMap.get(item.menuItemId ? item.menuItemId.toString() : "");
 
       if (!menuItem)
         return res.status(400).json({ success: false, error: `Menu item not found: ${item.menuItemId}` });

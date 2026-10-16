@@ -18,12 +18,14 @@
 - [ ] Enough disk space for file uploads
 
 ### Environment Variables
-- [ ] `.env` file is created
-- [ ] `PORT` is set
-- [ ] `MDB_URI` is configured
-- [ ] `API_VERSION` is set (default: v1)
-- [ ] `JWT_SECRET` is configured
-- [ ] Node environment is set (`NODE_ENV`)
+- [ ] `.env` file is created for `FoodBE` (Port 5050)
+- [ ] `.env` file is created for `zewito-catalog-service` (Port 4001)
+- [ ] `PORT` is set (5050 for Core, 4001 for Catalog)
+- [ ] `MDB_URI` & `CATALOG_DB_URI` point to production Atlas cluster
+- [ ] `JWT_SECRET` matches EXACTLY across both `FoodBE` and `zewito-catalog-service`
+- [ ] `INTERNAL_SERVICE_SECRET` is configured for secure inter-service calls
+- [ ] `CLOUDINARY_*` keys configured (no reliance on local `/uploads` in production)
+- [ ] `NODE_ENV` is set to `production`
 
 ### Dependencies
 - [ ] `npm install` completed successfully
