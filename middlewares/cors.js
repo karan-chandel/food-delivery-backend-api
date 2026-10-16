@@ -8,9 +8,10 @@ module.exports = (req, res, next) => {
       if (!origin) return callback(null, true);
       
       const normalizedOrigin = origin.replace(/\/$/, "");
+      const isLocalhost = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(normalizedOrigin);
       const isAllowed = ALLOWLIST.some(item => item.replace(/\/$/, "") === normalizedOrigin);
 
-      if (isAllowed) {
+      if (isAllowed || isLocalhost) {
         callback(null, true);
       } else {
         console.log("❌ CORS Blocked Origin:", origin);
@@ -18,7 +19,6 @@ module.exports = (req, res, next) => {
       }
     },
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
     credentials: true,
     optionsSuccessStatus: 200
   };
