@@ -11,6 +11,8 @@ const baseAllowlist = [
   "http://localhost:3001",
   "http://localhost:3002",
   "http://localhost:3003",
+  "http://localhost:58590",
+  "http://localhost:58590/",
   "https://rider-portal-pi.vercel.app",
   "https://restaurent-portal.vercel.app",
   "https://admin-portal-food.vercel.app",

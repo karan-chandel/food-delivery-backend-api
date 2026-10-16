@@ -7,7 +7,10 @@ module.exports = (req, res, next) => {
       // Allow requests with no origin (like mobile apps or curl requests)
       if (!origin) return callback(null, true);
       
-      if (ALLOWLIST.includes(origin)) {
+      const normalizedOrigin = origin.replace(/\/$/, "");
+      const isAllowed = ALLOWLIST.some(item => item.replace(/\/$/, "") === normalizedOrigin);
+
+      if (isAllowed) {
         callback(null, true);
       } else {
         console.log("❌ CORS Blocked Origin:", origin);
