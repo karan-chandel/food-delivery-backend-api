@@ -27,6 +27,8 @@ exports.sendOtp = async (req, res, next) => {
       });
     }
 
+    const cleanPhone = String(phone).trim().replace(/\s+/g, "");
+
     if (!['customer', 'rider', 'restaurant'].includes(role)) {
       return res.status(400).json({
         success: false,
@@ -34,24 +36,60 @@ exports.sendOtp = async (req, res, next) => {
       });
     }
 
-    if (phone.length < 10) {
+    if (cleanPhone.length < 10) {
       return res.status(400).json({
         success: false,
         error: "Invalid phone number"
       });
     }
 
+    // 🛡️ SECURITY 1: Phone-Level Cooldown (Must wait 60s between OTP requests)
+    const lastOtp = await OTP.findOne({ phone: cleanPhone }).sort({ createdAt: -1 });
+    if (lastOtp) {
+      const elapsedSeconds = Math.floor((Date.now() - new Date(lastOtp.createdAt).getTime()) / 1000);
+      const cooldownSeconds = 60;
+      if (elapsedSeconds < cooldownSeconds) {
+        const waitTime = cooldownSeconds - elapsedSeconds;
+        return res.status(429).json({
+          success: false,
+          error: `Please wait ${waitTime} seconds before requesting a new OTP.`,
+          retryAfter: waitTime
+        });
+      }
+    }
+
+    // 🛡️ SECURITY 2: Phone-Level Quota (Max 4 OTPs per 15 minutes to block SMS toll fraud)
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+    const recentOtpCount = await OTP.countDocuments({
+      phone: cleanPhone,
+      createdAt: { $gte: fifteenMinutesAgo }
+    });
+
+    if (recentOtpCount >= 4) {
+      return res.status(429).json({
+        success: false,
+        error: "Maximum OTP attempts exceeded for this phone number. Please try again after 15 minutes.",
+        retryAfter: 900
+      });
+    }
+
+    // 🛡️ SECURITY 3: Invalidate previous unused OTPs for this phone (Prevents token overlap)
+    await OTP.updateMany(
+      { phone: cleanPhone, isUsed: false },
+      { $set: { isUsed: true } }
+    );
+
     const otp = generateOTP();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
     await OTP.create({
-      phone,
+      phone: cleanPhone,
       otp,
       expiresAt,
       role
     });
 
-    console.log(`OTP for ${phone} (${role}): ${otp}`);
+    console.log(`OTP for ${cleanPhone} (${role}): ${otp}`);
 
     const responseData = {
       success: true,
@@ -80,13 +118,29 @@ exports.verifyOtp = async (req, res, next) => {
       });
     }
 
+    const cleanPhone = String(phone).trim().replace(/\s+/g, "");
+
     const otpRecord = await OTP.findOneAndUpdate(
-      { phone, otp, isUsed: false, expiresAt: { $gt: new Date() } },
+      { phone: cleanPhone, otp, isUsed: false, expiresAt: { $gt: new Date() } },
       { $set: { isUsed: true } },
       { new: true }
     );
 
     if (!otpRecord) {
+      // 🛡️ SECURITY 4: Track failed attempts to prevent OTP brute-force
+      const activeOtp = await OTP.findOne({ phone: cleanPhone, isUsed: false, expiresAt: { $gt: new Date() } });
+      if (activeOtp) {
+        activeOtp.attempts = (activeOtp.attempts || 0) + 1;
+        if (activeOtp.attempts >= 3) {
+          activeOtp.isUsed = true; // Invalidate after 3 wrong guesses
+          await activeOtp.save();
+          return res.status(401).json({
+            success: false,
+            error: "Too many incorrect OTP attempts. This OTP has been invalidated. Please request a new one."
+          });
+        }
+        await activeOtp.save();
+      }
       return res.status(401).json({ success: false, error: "Invalid or expired OTP" });
     }
 
