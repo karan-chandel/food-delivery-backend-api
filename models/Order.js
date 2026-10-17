@@ -146,8 +146,14 @@ const orderSchema = new mongoose.Schema({
   riderRating: { type: Number, min: 1, max: 5 },
   riderReview: String,
   restaurantRating: { type: Number, min: 1, max: 5 },
-  restaurantReview: String
+  restaurantReview: String,
 
+  // 🛡️ Checkout Idempotency Key (TSK-203)
+  idempotencyKey: {
+    type: String,
+    sparse: true,
+    index: true,
+  },
 }, {
   timestamps: true
 });

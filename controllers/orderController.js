@@ -214,6 +214,12 @@ exports.createOrder = async (req, res, next) => {
     };
 
     // ── 6. Create Order in DB ────────────────────────────────────────────────
+    const idempotencyKey =
+      req.headers["x-idempotency-key"] ||
+      req.headers["idempotency-key"] ||
+      req.body?.idempotencyKey ||
+      undefined;
+
     const order = await Order.create({
       customerId: req.user._id,
       restaurantId,
@@ -223,6 +229,7 @@ exports.createOrder = async (req, res, next) => {
       tax,
       finalAmount,
       coupon: appliedCoupon,
+      idempotencyKey,
       deliveryAddress: {
         ...deliveryAddress,
         coordinates: deliveryAddress.coordinates || {
