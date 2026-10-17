@@ -8,6 +8,11 @@ const { otpLimiter } = require("../../middlewares/security");
 router.post("/send-otp", otpLimiter, authController.sendOtp);
 router.post("/verify-otp", authController.verifyOtp);
 
+// Token Lifecycle (TSK-202)
+router.post("/refresh-token", authController.refreshToken);
+router.post("/refresh", authController.refreshToken);
+router.post("/logout", authController.logout);
+
 router.get("/profile", auth, requireRole(['customer']), authController.getProfile);
 router.put("/profile", auth, requireRole(['customer']), authController.updateProfile);
 

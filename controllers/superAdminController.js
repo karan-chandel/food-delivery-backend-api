@@ -10,6 +10,7 @@ const OTP = require("../models/OTP");
 const jwt = require("jsonwebtoken");
 const { JWT_SECRET } = require("../config/config");
 const { PERMISSION_PRESETS } = require("../config/adminPermissions");
+const tokenHelper = require("../utils/tokenHelper");
 
 // ✅ CONSTANTS FOR CONSISTENCY
 const TICKET_STATUS = {
@@ -106,22 +107,29 @@ exports.adminLogin = async (req, res, next) => {
 
     await admin.save();
 
-    const token = jwt.sign(
-      {
-        adminId: admin._id,
-        email: admin.email,
-        role: admin.role,
-        permissions: admin.permissions,
-        isVerified: true
-      },
-      JWT_SECRET,
-      { expiresIn: "24h" }
-    );
+    const tokenPayload = {
+      adminId: admin._id,
+      email: admin.email,
+      role: admin.role,
+      permissions: admin.permissions,
+      isVerified: true
+    };
+
+    // 🛡️ TSK-202: Short-Lived Access Token + Refresh Token for Admin Portal
+    const accessToken = tokenHelper.generateAccessToken(tokenPayload);
+    const { refreshToken } = await tokenHelper.generateRefreshToken({
+      userId: admin._id,
+      role: admin.role,
+      req
+    });
 
     res.json({
       success: true,
       message: "Admin login successful",
-      token,
+      token: accessToken, // 100% backward-compatible for existing admin portal
+      accessToken,
+      refreshToken,
+      expiresIn: 3600,
       admin: {
         id: admin._id,
         name: admin.name,

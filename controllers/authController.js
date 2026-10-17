@@ -8,6 +8,7 @@ const Order = require("../models/Order");
 const jwt = require("jsonwebtoken");
 const { JWT_SECRET, DEBUG_OTP } = require("../config/config");
 const { uploadBufferToCloudinary } = require('../middlewares/upload');
+const tokenHelper = require("../utils/tokenHelper");
 const fs = require('fs');
 
 // Generate random 6-digit OTP
@@ -264,16 +265,20 @@ exports.verifyOtp = async (req, res, next) => {
       }
     }
 
-    const token = jwt.sign(
-      {
-        userId: baseUser._id,
-        phone: baseUser.phone,
-        role: otpRole,
-        isVerified: baseUser.isVerified
-      },
-      JWT_SECRET,
-      { expiresIn: "30d" }
-    );
+    const tokenPayload = {
+      userId: baseUser._id,
+      phone: baseUser.phone,
+      role: otpRole,
+      isVerified: baseUser.isVerified
+    };
+
+    // 🛡️ TSK-202: Short-Lived Access Token (1h) + Rotatable Refresh Token (30d)
+    const accessToken = tokenHelper.generateAccessToken(tokenPayload);
+    const { refreshToken } = await tokenHelper.generateRefreshToken({
+      userId: baseUser._id,
+      role: otpRole,
+      req
+    });
 
     let userResponse = {
       id: baseUser._id,
@@ -318,7 +323,10 @@ exports.verifyOtp = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: message,
-      token,
+      token: accessToken, // 100% backward-compatible for existing Flutter apps reading data.token
+      accessToken,
+      refreshToken,
+      expiresIn: 3600,
       user: userResponse
     });
   } catch (err) {
@@ -1009,3 +1017,58 @@ exports.completeRestaurant = async (req, res, next) => {
     next(err);
   }
 };
+
+// 🔄 Silent Refresh Token Handler (TSK-202)
+exports.refreshToken = async (req, res, next) => {
+  try {
+    const rawToken = req.body.refreshToken || req.cookies?.refreshToken;
+
+    if (!rawToken) {
+      return res.status(400).json({
+        success: false,
+        error: "Refresh token is required",
+      });
+    }
+
+    const result = await tokenHelper.verifyAndRotateRefreshToken(rawToken, req);
+
+    if (!result.valid) {
+      return res.status(401).json({
+        success: false,
+        error: result.error,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Token refreshed successfully",
+      token: result.accessToken, // Backward-compatible for Flutter/Web apps
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+      expiresIn: result.expiresIn,
+    });
+  } catch (err) {
+    console.error("❌ Refresh Token Error:", err);
+    next(err);
+  }
+};
+
+// 🚪 Revoke Refresh Token on Logout (TSK-202)
+exports.logout = async (req, res, next) => {
+  try {
+    const rawToken = req.body.refreshToken || req.cookies?.refreshToken;
+
+    if (rawToken) {
+      await tokenHelper.revokeRefreshToken(rawToken);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Logged out successfully",
+    });
+  } catch (err) {
+    console.error("❌ Logout Error:", err);
+    next(err);
+  }
+};
+
