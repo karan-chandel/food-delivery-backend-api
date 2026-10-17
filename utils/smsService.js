@@ -113,7 +113,7 @@ const sendOtpSms = async (phone, otp) => {
     }
 
     // If OTP route failed with DLT restriction, try quick SMS route fallback
-    console.warn("⚠️ [SMS Service] Fast2SMS OTP route response:", response.body?.message || response.body);
+    console.warn("⚠️ [SMS Service] Fast2SMS OTP route response:", JSON.stringify(response.body));
 
     const quickPayload = {
       route: "q",
@@ -134,10 +134,10 @@ const sendOtpSms = async (phone, otp) => {
       };
     }
 
-    console.error("❌ [SMS Service] Fast2SMS Gateway rejected dispatch:", fallbackResponse.body);
+    console.error("❌ [SMS Service] Fast2SMS Gateway rejected dispatch:", JSON.stringify(fallbackResponse.body));
     return {
       success: false,
-      error: fallbackResponse.body?.message?.[0] || "Fast2SMS gateway error",
+      error: fallbackResponse.body?.message?.[0] || fallbackResponse.body?.message || "Fast2SMS gateway error",
     };
   } catch (err) {
     console.error("❌ [SMS Service] Fast2SMS network error:", err.message);

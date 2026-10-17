@@ -32,47 +32,60 @@ function initializeSocket(server) {
             const { createAdapter } = require("@socket.io/redis-adapter");
             const Redis = require("ioredis");
 
+            let hasLoggedNotice = false;
             const redisOptions = {
-                maxRetriesPerRequest: null,
+                maxRetriesPerRequest: 1,
                 enableReadyCheck: true,
                 lazyConnect: true,
+                connectTimeout: 3000,
                 retryStrategy: (times) => {
-                    const delay = Math.min(times * 500, 5000);
-                    return delay;
+                    if (times > 2) {
+                        if (!hasLoggedNotice) {
+                            hasLoggedNotice = true;
+                            console.warn("ℹ️ [Redis Socket.io] Redis server offline. Operating in default single-node in-memory mode.");
+                        }
+                        return null; // Stop infinite reconnect loop
+                    }
+                    return 1000;
                 }
             };
 
             const pubClient = new Redis(REDIS_URL, redisOptions);
             const subClient = pubClient.duplicate();
 
-            pubClient.on("connect", () => {
-                console.log("🔌 [Redis Socket.io] Pub client connected");
-            });
             pubClient.on("ready", () => {
-                console.log("✅ [Redis Socket.io] Pub client ready");
+                console.log("✅ [Redis Socket.io] Pub client connected & ready");
             });
             pubClient.on("error", (err) => {
-                console.warn("⚠️ [Redis Socket.io] Pub client error:", err.message);
+                if (!hasLoggedNotice) {
+                    hasLoggedNotice = true;
+                    console.warn("ℹ️ [Redis Socket.io] Redis connection notice:", err.message || "Offline");
+                }
             });
 
-            subClient.on("connect", () => {
-                console.log("🔌 [Redis Socket.io] Sub client connected");
-            });
             subClient.on("ready", () => {
-                console.log("✅ [Redis Socket.io] Sub client ready");
+                console.log("✅ [Redis Socket.io] Sub client connected & ready");
             });
             subClient.on("error", (err) => {
-                console.warn("⚠️ [Redis Socket.io] Sub client error:", err.message);
+                if (!hasLoggedNotice) {
+                    hasLoggedNotice = true;
+                    console.warn("ℹ️ [Redis Socket.io] Redis connection notice:", err.message || "Offline");
+                }
             });
 
-            io.adapter(createAdapter(pubClient, subClient));
-            console.log("🚀 [Socket.io] Mounted Redis Pub/Sub adapter (Multi-instance scalability active)");
-
-            Promise.all([pubClient.connect(), subClient.connect()]).catch((err) => {
-                console.warn("⚠️ [Redis Socket.io] Initial connection notice (using fallback adapter):", err.message);
-            });
+            Promise.all([pubClient.connect(), subClient.connect()])
+                .then(() => {
+                    io.adapter(createAdapter(pubClient, subClient));
+                    console.log("🚀 [Socket.io] Mounted Redis Pub/Sub adapter (Multi-instance scalability active)");
+                })
+                .catch((err) => {
+                    if (!hasLoggedNotice) {
+                        hasLoggedNotice = true;
+                        console.warn("ℹ️ [Redis Socket.io] Redis offline. Operating in default single-node in-memory mode.");
+                    }
+                });
         } catch (adapterErr) {
-            console.warn("⚠️ [Socket.io] Redis adapter notice (running default in-memory adapter):", adapterErr.message);
+            console.warn("ℹ️ [Socket.io] Default in-memory adapter active:", adapterErr.message);
         }
     } else {
         console.log("ℹ️ [Socket.io] REDIS_URL not configured. Running with default in-memory adapter (single-node).");
