@@ -1,6 +1,6 @@
 const { Server } = require("socket.io");
 const jwt = require('jsonwebtoken');
-const { JWT_SECRET, ALLOWLIST } = require('../config/config');
+const { JWT_SECRET, ALLOWLIST, REDIS_URL } = require('../config/config');
 const Admin = require('../models/Admin');
 const Customer = require('../models/Customer');
 const User = require('../models/User');
@@ -25,6 +25,58 @@ function initializeSocket(server) {
         pingTimeout: 60000,
         pingInterval: 25000
     });
+
+    // ── Redis Adapter for Horizontal Multi-Instance Scalability (TSK-201) ─────
+    if (REDIS_URL && REDIS_URL.trim() !== "") {
+        try {
+            const { createAdapter } = require("@socket.io/redis-adapter");
+            const Redis = require("ioredis");
+
+            const redisOptions = {
+                maxRetriesPerRequest: null,
+                enableReadyCheck: true,
+                lazyConnect: true,
+                retryStrategy: (times) => {
+                    const delay = Math.min(times * 500, 5000);
+                    return delay;
+                }
+            };
+
+            const pubClient = new Redis(REDIS_URL, redisOptions);
+            const subClient = pubClient.duplicate();
+
+            pubClient.on("connect", () => {
+                console.log("🔌 [Redis Socket.io] Pub client connected");
+            });
+            pubClient.on("ready", () => {
+                console.log("✅ [Redis Socket.io] Pub client ready");
+            });
+            pubClient.on("error", (err) => {
+                console.warn("⚠️ [Redis Socket.io] Pub client error:", err.message);
+            });
+
+            subClient.on("connect", () => {
+                console.log("🔌 [Redis Socket.io] Sub client connected");
+            });
+            subClient.on("ready", () => {
+                console.log("✅ [Redis Socket.io] Sub client ready");
+            });
+            subClient.on("error", (err) => {
+                console.warn("⚠️ [Redis Socket.io] Sub client error:", err.message);
+            });
+
+            io.adapter(createAdapter(pubClient, subClient));
+            console.log("🚀 [Socket.io] Mounted Redis Pub/Sub adapter (Multi-instance scalability active)");
+
+            Promise.all([pubClient.connect(), subClient.connect()]).catch((err) => {
+                console.warn("⚠️ [Redis Socket.io] Initial connection notice (using fallback adapter):", err.message);
+            });
+        } catch (adapterErr) {
+            console.warn("⚠️ [Socket.io] Redis adapter notice (running default in-memory adapter):", adapterErr.message);
+        }
+    } else {
+        console.log("ℹ️ [Socket.io] REDIS_URL not configured. Running with default in-memory adapter (single-node).");
+    }
 
     // Store connected users by role
     const connectedUsers = {
