@@ -9,6 +9,7 @@ const jwt = require("jsonwebtoken");
 const { JWT_SECRET, DEBUG_OTP } = require("../config/config");
 const { uploadBufferToCloudinary } = require('../middlewares/upload');
 const tokenHelper = require("../utils/tokenHelper");
+const smsService = require("../utils/smsService");
 const fs = require('fs');
 
 // Generate random 6-digit OTP
@@ -92,6 +93,9 @@ exports.sendOtp = async (req, res, next) => {
 
     console.log(`OTP for ${cleanPhone} (${role}): ${otp}`);
 
+    // 📲 Dispatch live SMS via Fast2SMS Gateway
+    const smsResult = await smsService.sendOtpSms(cleanPhone, otp);
+
     const responseData = {
       success: true,
       message: "OTP sent successfully"
@@ -99,6 +103,9 @@ exports.sendOtp = async (req, res, next) => {
 
     if (DEBUG_OTP) {
       responseData.debug_otp = otp;
+      if (!smsResult.success) {
+        responseData.sms_notice = smsResult.error;
+      }
     }
 
     res.status(200).json(responseData);
