@@ -31,5 +31,7 @@ module.exports = {
   JWT_SECRET: process.env.JWT_SECRET || "your_fallback_jwt_secret_key_here",
   ALLOWLIST: [...baseAllowlist, ...envAllowlist],
   // DEBUG_OTP is true in dev unless explicitly disabled, and false in production unless explicitly enabled
-  DEBUG_OTP: (process.env.DEBUG_OTP && ["true", "1"].includes(String(process.env.DEBUG_OTP).toLowerCase().trim())) || (process.env.NODE_ENV !== "production" && process.env.DEBUG_OTP !== "false")
+  DEBUG_OTP: (process.env.DEBUG_OTP && ["true", "1"].includes(String(process.env.DEBUG_OTP).toLowerCase().trim())) || (process.env.NODE_ENV !== "production" && process.env.DEBUG_OTP !== "false"),
+  CATALOG_SERVICE_URL: process.env.CATALOG_SERVICE_URL || (process.env.NODE_ENV === "production" ? "https://zewito-catalog-service.onrender.com" : "http://localhost:4001"),
+  INTERNAL_SERVICE_SECRET: process.env.INTERNAL_SERVICE_SECRET || "d778a0a96422d9c1203f62e9753cbbb2fb9b175e41295e5a1d02ed0224152595"
 };

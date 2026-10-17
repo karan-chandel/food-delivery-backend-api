@@ -16,6 +16,7 @@ const RestaurantUser = require("../models/RestaurantUser");
 const Admin = require("../models/Admin");
 const Coupon = require("../models/Coupon");
 const Rider = require("../models/Rider");
+const catalogClient = require("../utils/catalogClient");
 const { createNotification, createRestaurantNotifications } = require('../utils/notificationHelper');
 
 // Helper to emit socket events safely
@@ -98,202 +99,121 @@ function buildRoute(orderObj) {
   };
 }
 
-// ✅ Create Order
+// ✅ Create Order (Decoupled via Catalog Microservice - TSK-104)
 exports.createOrder = async (req, res, next) => {
   try {
     let { restaurantId, items, deliveryAddress, paymentMethod, specialInstructions } = req.body;
 
-    if (!restaurantId || !deliveryAddress || !paymentMethod)
-      return res.status(400).json({ success: false, error: "Missing required fields: restaurantId, deliveryAddress, paymentMethod" });
+    if (!restaurantId || !deliveryAddress || !paymentMethod) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing required fields: restaurantId, deliveryAddress, paymentMethod",
+      });
+    }
 
     const cart = await Cart.findOne({ userId: req.user._id });
-    
+
     if (!items || items.length === 0) {
       if (!cart || cart.items.length === 0) {
-        return res.status(400).json({ 
-          success: false, 
-          error: "Cart is empty. Please add items to cart or provide items array." 
+        return res.status(400).json({
+          success: false,
+          error: "Cart is empty. Please add items to cart or provide items array.",
         });
       }
-      
-      items = cart.items.map(item => ({
+
+      items = cart.items.map((item) => ({
         menuItemId: item.menuItemId,
         quantity: item.quantity,
         price: item.price,
         variant: item.variant,
         addons: item.addons,
-        specialInstructions: item.specialInstructions
+        specialInstructions: item.specialInstructions,
       }));
     }
 
-    if (!Array.isArray(items) || items.length === 0)
+    if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ success: false, error: "Items array cannot be empty" });
-
-    const restaurant = await Restaurant.findById(restaurantId);
-    if (!restaurant)
-      return res.status(404).json({ success: false, error: "Restaurant not found" });
-
-    if (!restaurant.isOpen)
-      return res.status(400).json({ success: false, error: "Restaurant is closed" });
-
-    // 🔥 PRICE CALCULATION (SECURE)
-    let subtotal = 0;
-    const orderItems = [];
-
-    // 🔥 Batch query all menu items at once (Eliminates N+1 DB latency bottleneck)
-    const menuItemIds = items.map(i => i.menuItemId).filter(Boolean);
-    const menuItems = await MenuItem.find({ _id: { $in: menuItemIds } });
-    const menuItemMap = new Map(menuItems.map(m => [m._id.toString(), m]));
-
-    for (const item of items) {
-      const menuItem = menuItemMap.get(item.menuItemId ? item.menuItemId.toString() : "");
-
-      if (!menuItem)
-        return res.status(400).json({ success: false, error: `Menu item not found: ${item.menuItemId}` });
-
-      if (!menuItem.isAvailable)
-        return res.status(400).json({ success: false, error: `${menuItem.name} unavailable` });
-
-      if (menuItem.restaurantId.toString() !== restaurantId)
-        return res.status(400).json({ success: false, error: `${menuItem.name} does not belong to this restaurant` });
-
-      // Secure price lookup from database
-      let dbPrice = menuItem.discountedPrice || menuItem.price;
-      let secureVariant = undefined;
-      const secureAddons = [];
-
-      // Validate Variant price
-      if (item.variant && item.variant.name) {
-        const dbVariant = menuItem.variants.find(v => v.name === item.variant.name);
-        if (dbVariant) {
-          dbPrice = dbVariant.price;
-          secureVariant = {
-            name: dbVariant.name,
-            price: dbVariant.price
-          };
-        }
-      }
-
-      // Validate Addons price
-      if (item.addons && item.addons.length) {
-        let addonPriceSum = 0;
-        for (const a of item.addons) {
-          let foundAddonItem = null;
-          for (const group of menuItem.addonGroups) {
-            const match = group.items.find(groupItem => groupItem.name === a.name);
-            if (match) {
-              foundAddonItem = match;
-              break;
-            }
-          }
-          if (foundAddonItem) {
-            addonPriceSum += foundAddonItem.price;
-            secureAddons.push({
-              name: foundAddonItem.name,
-              price: foundAddonItem.price
-            });
-          }
-        }
-        dbPrice += addonPriceSum;
-      }
-
-      const quantity = item.quantity && item.quantity > 0 ? item.quantity : 1;
-      const itemTotal = dbPrice * quantity;
-      subtotal += itemTotal;
-
-      orderItems.push({
-        menuItemId: menuItem._id,
-        name: menuItem.name,
-        price: dbPrice,
-        quantity,
-        variant: secureVariant,
-        addons: secureAddons,
-        specialInstructions: item.specialInstructions || "",
-        isVeg: menuItem.isVeg,
-        itemTotal
-      });
     }
 
-    if (subtotal < (restaurant.minOrderAmount || 0))
+    // ── 1. Authoritative Validation via Catalog Microservice ───────────────────
+    const couponCode = req.body.couponCode || cart?.coupon?.code;
+    const validationResult = await catalogClient.validateCart({
+      restaurantId,
+      items,
+      couponCode,
+    });
+
+    if (!validationResult || !validationResult.isValid) {
       return res.status(400).json({
         success: false,
-        error: `Minimum order ₹${restaurant.minOrderAmount}. Your subtotal ₹${subtotal}`
+        error: validationResult?.message || "Cart validation failed",
+        reason: validationResult?.reason,
       });
+    }
 
-    const deliveryFee = restaurant.deliveryFee || 0;
-    const taxRate = restaurant.taxRate !== undefined ? restaurant.taxRate : 5;
+    const {
+      subtotal,
+      discountApplied,
+      verifiedItems,
+      couponSnapshot,
+      restaurantSnapshot,
+    } = validationResult;
+
+    // ── 2. Build Order Items from Immutable Snapshot ────────────────────────
+    const orderItems = verifiedItems.map((v) => ({
+      menuItemId: v.itemId,
+      name: v.nameSnapshot,
+      price: v.finalUnitTotal,
+      quantity: v.quantity,
+      variant: v.variantSnapshot,
+      addons: v.modifierSnapshots,
+      specialInstructions: v.specialInstructions || "",
+      isVeg: v.isVeg,
+      itemTotal: v.itemLineTotal,
+    }));
+
+    // ── 3. Calculate Totals ──────────────────────────────────────────────────
+    const deliveryFee = restaurantSnapshot.deliveryFee || 0;
+    const taxRate = restaurantSnapshot.taxRate !== undefined ? restaurantSnapshot.taxRate : 5;
     const tax = Math.round((subtotal * taxRate) / 100);
-    let finalAmount = subtotal + deliveryFee + tax;
+    const finalAmount = Math.max(0, subtotal + deliveryFee + tax - (discountApplied || 0));
 
-    // 🎫 COUPON VALIDATION & APPLY (CRITICAL FIX)
+    // ── 4. Apply Coupon Snapshot ─────────────────────────────────────────────
     let appliedCoupon = null;
-    let couponDiscountAmount = 0;
-    
-    if (cart && cart.coupon && cart.coupon.code) {
-      console.log("🔍 Validating coupon:", cart.coupon.code);
-      
-      const coupon = await Coupon.findOne({
-        code: cart.coupon.code,
-        restaurantId: restaurantId,
-        isActive: true,
-        expiryDate: { $gte: new Date() }
-      });
-      
-      let isCouponValid = true;
-      let errorMessage = "";
-      
-      if (!coupon) {
-        isCouponValid = false;
-        errorMessage = "Coupon is invalid or expired";
-      } else if (subtotal < coupon.minOrderAmount) {
-        isCouponValid = false;
-        errorMessage = `Coupon requires minimum order of ₹${coupon.minOrderAmount}`;
-      } else if (coupon.usageLimit && coupon.usedCount >= coupon.usageLimit) {
-        isCouponValid = false;
-        errorMessage = "Coupon usage limit reached";
-      }
-      
-      if (isCouponValid) {
-        if (coupon.discountType === "percentage") {
-          couponDiscountAmount = (subtotal * coupon.discountValue) / 100;
-          if (coupon.maxDiscount) {
-            couponDiscountAmount = Math.min(couponDiscountAmount, coupon.maxDiscount);
-          }
-        } else {
-          couponDiscountAmount = Math.min(coupon.discountValue, subtotal);
-        }
-        
-        finalAmount = Math.max(0, finalAmount - couponDiscountAmount);
-        appliedCoupon = {
-          code: coupon.code,
-          discountAmount: couponDiscountAmount
-        };
-        
-        coupon.usedCount += 1;
-        await coupon.save();
-        console.log(`✅ Coupon applied successfully! Discount: ₹${couponDiscountAmount}`);
-      } else {
-        console.log(`⚠️ Coupon rejected: ${errorMessage}`);
+    if (couponSnapshot && discountApplied > 0) {
+      appliedCoupon = {
+        code: couponSnapshot.code,
+        discountAmount: discountApplied,
+      };
+
+      // Increment coupon usage in background
+      if (couponSnapshot.couponId) {
+        Coupon.findByIdAndUpdate(couponSnapshot.couponId, { $inc: { usedCount: 1 } }).catch((err) =>
+          console.warn("Coupon usage increment notice:", err.message)
+        );
       }
     }
 
-    const deliveryTime = Number(restaurant.deliveryTime) || 30;
+    // ── 5. Delivery Route & Estimated Time ───────────────────────────────────
+    const restAddress = restaurantSnapshot.address || {};
+    const deliveryTime = Number(restaurantSnapshot.deliveryTime) || 30;
     const estimatedDelivery = new Date(Date.now() + deliveryTime * 60000);
 
     const route = {
       restaurantLocation: {
-        lat: restaurant.address?.geolocation?.latitude || restaurant.coordinates?.lat,
-        lng: restaurant.address?.geolocation?.longitude || restaurant.coordinates?.lng,
-        address: restaurant.address?.addressLine1 || `${restaurant.name}, ${restaurant.address?.city || ''}`
+        lat: restAddress.geolocation?.latitude || restAddress.coordinates?.lat || 0,
+        lng: restAddress.geolocation?.longitude || restAddress.coordinates?.lng || 0,
+        address: restAddress.addressLine1 || `${restaurantSnapshot.nameSnapshot || ""}, ${restAddress.city || ""}`,
       },
       customerLocation: {
         lat: deliveryAddress.coordinates?.lat || deliveryAddress.latitude,
         lng: deliveryAddress.coordinates?.lng || deliveryAddress.longitude,
-        address: `${deliveryAddress.addressLine1}, ${deliveryAddress.city}`
+        address: `${deliveryAddress.addressLine1}, ${deliveryAddress.city || ""}`,
       },
-      polyline: ''
+      polyline: "",
     };
 
+    // ── 6. Create Order in DB ────────────────────────────────────────────────
     const order = await Order.create({
       customerId: req.user._id,
       restaurantId,
@@ -307,29 +227,32 @@ exports.createOrder = async (req, res, next) => {
         ...deliveryAddress,
         coordinates: deliveryAddress.coordinates || {
           lat: deliveryAddress.latitude,
-          lng: deliveryAddress.longitude
-        }
+          lng: deliveryAddress.longitude,
+        },
       },
       route,
       paymentMethod,
-      paymentStatus: paymentMethod === 'cod' ? 'pending' : 'paid',
+      paymentStatus: paymentMethod === "cod" ? "pending" : "paid",
       specialInstructions,
-      status: 'pending',
+      status: "pending",
       estimatedDelivery,
-      statusHistory: [{ status: 'pending', timestamp: new Date(), updatedBy: req.user._id }]
+      statusHistory: [{ status: "pending", timestamp: new Date(), updatedBy: req.user._id }],
     });
 
+    // ── 7. Clear User Cart ───────────────────────────────────────────────────
     await Cart.findOneAndUpdate(
       { userId: req.user._id },
       { items: [], totalAmount: 0, finalAmount: 0, restaurantId: null, coupon: null }
     );
 
     const populatedOrder = await Order.findById(order._id)
-      .populate('customerId', 'name phone')
-      .populate('restaurantId', 'name address phone');
+      .populate("customerId", "name phone")
+      .populate("restaurantId", "name address phone");
 
-    // SOCKET EMIT
-    const io = req.app.get('io');
+    const restaurantDisplayName = restaurantSnapshot.nameSnapshot || populatedOrder?.restaurantId?.name || "Restaurant";
+
+    // ── 8. Real-time Socket Dispatch ────────────────────────────────────────
+    const io = req.app.get("io");
     if (io) {
       const socketPayload = {
         orderId: order.orderId,
@@ -337,69 +260,69 @@ exports.createOrder = async (req, res, next) => {
         restaurantId: order.restaurantId,
         customerId: order.customerId,
         finalAmount: order.finalAmount,
-        timestamp: new Date()
+        timestamp: new Date(),
       };
-      
+
       io.to(`restaurant_${restaurantId}`).emit("order:new", socketPayload);
       io.to("admins_room").emit("order:new", socketPayload);
     }
 
-    // NOTIFICATIONS
+    // ── 9. Notifications ────────────────────────────────────────────────────
     await createRestaurantNotifications(restaurantId, {
-      title: 'New Order Received 📦',
+      title: "New Order Received 📦",
       message: `You have received a new order #${order.orderId} - ₹${finalAmount}`,
-      type: 'order',
+      type: "order",
       data: {
         orderId: order.orderId,
-        status: 'pending',
-        type: 'new_order'
+        status: "pending",
+        type: "new_order",
       },
-      priority: 'high'
+      priority: "high",
     });
 
     await createNotification({
       userId: req.user._id,
-      title: 'Order Placed Successfully 🎉',
-      message: `Your order #${order.orderId} has been placed at ${restaurant.name}`,
-      type: 'order',
+      title: "Order Placed Successfully 🎉",
+      message: `Your order #${order.orderId} has been placed at ${restaurantDisplayName}`,
+      type: "order",
       data: {
         orderId: order.orderId,
-        status: 'pending',
-        type: 'order_placed'
+        status: "pending",
+        type: "order_placed",
       },
-      priority: 'medium'
+      priority: "medium",
     });
 
     const admins = await Admin.find({ isActive: true });
     for (const admin of admins) {
       await createNotification({
         userId: admin._id,
-        title: '📦 New Order Placed',
+        title: "📦 New Order Placed",
         message: `New order #${order.orderId} from ${req.user.name} - ₹${finalAmount}`,
-        type: 'order',
+        type: "order",
         data: {
           orderId: order.orderId,
           customerId: req.user._id,
           restaurantId: restaurantId,
-          type: 'new_order_admin'
+          type: "new_order_admin",
         },
-        priority: 'medium'
+        priority: "medium",
       });
     }
 
     res.status(201).json({
       success: true,
-      message: `Order placed successfully at ${restaurant.name}`,
+      message: `Order placed successfully at ${restaurantDisplayName}`,
       data: populatedOrder,
       summary: {
         subtotal,
         deliveryFee,
         tax,
-        couponDiscount: couponDiscountAmount,
+        couponDiscount: discountApplied || 0,
         finalAmount,
         estimatedDelivery,
-        orderId: order.orderId
-      }
+        orderId: order.orderId,
+      },
     });
   } catch (err) {
     console.error("❌ Order error:", err);
