@@ -10,6 +10,7 @@ const path = require("path");
 const fs = require("fs");
 
 const app = express();
+app.set("trust proxy", 1); // Enable trusting reverse proxy headers (Render, Cloudflare, API Gateway)
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, 'uploads');

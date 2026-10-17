@@ -85,6 +85,9 @@ function createRateLimiter(options = {}) {
   if (cleanupTimer.unref) cleanupTimer.unref();
 
   return function rateLimiter(req, res, next) {
+    if (options.skip && options.skip(req)) {
+      return next();
+    }
     const key = keyGenerator(req);
     const now = Date.now();
 
@@ -119,7 +122,8 @@ function createRateLimiter(options = {}) {
 // Preset Limiters
 const globalApiLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 300, // 300 requests per 15 min per IP
+  max: process.env.RATE_LIMIT_MAX ? parseInt(process.env.RATE_LIMIT_MAX, 10) : 2500, // 2500 requests per 15 min per IP
+  skip: (req) => process.env.NODE_ENV === "development",
   message: {
     success: false,
     error: "Too many requests from this IP. Please try again after 15 minutes."
