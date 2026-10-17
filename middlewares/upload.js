@@ -9,7 +9,8 @@ const fileFilter = (req, file, cb) => {
     "image/png",
     "image/jpeg",
     "image/jpg",
-    "image/webp"
+    "image/webp",
+    "application/pdf"
   ];
 
   if (allowedTypes.includes(file.mimetype)) {
@@ -17,7 +18,7 @@ const fileFilter = (req, file, cb) => {
   } else {
     cb(
       new Error(
-        "Invalid file type. Only JPG, JPEG, PNG, WEBP files are allowed."
+        "Invalid file type. Only JPG, JPEG, PNG, WEBP, and PDF files are allowed."
       ),
       false
     );
@@ -32,15 +33,23 @@ const upload = multer({
   fileFilter: fileFilter
 });
 
-// ✅ Direct Cloudinary Stream Upload Helper (100% Native, zero peer-dep conflicts)
-const uploadBufferToCloudinary = (buffer, folder = "Zewito/menu-items") => {
+// ✅ Direct Cloudinary Stream Upload Helper (100% Stateless & Cloud-Native)
+const uploadBufferToCloudinary = (buffer, folder = "Zewito/general", options = {}) => {
   return new Promise((resolve, reject) => {
+    const uploadOptions = {
+      folder: folder,
+      resource_type: options.resource_type || "auto",
+      ...options
+    };
+
+    if (uploadOptions.resource_type === "image") {
+      uploadOptions.transformation = uploadOptions.transformation || [
+        { width: 1200, height: 1200, crop: "limit", quality: "auto" }
+      ];
+    }
+
     const uploadStream = cloudinary.uploader.upload_stream(
-      {
-        folder: folder,
-        resource_type: "image",
-        transformation: [{ width: 1000, height: 1000, crop: "limit", quality: "auto" }]
-      },
+      uploadOptions,
       (error, result) => {
         if (error) return reject(error);
         resolve(result);

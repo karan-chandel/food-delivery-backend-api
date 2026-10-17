@@ -3,6 +3,7 @@ const User = require('../models/User');
 const Rider = require('../models/Rider');
 const Order = require('../models/Order');
 const { calculateDistance, calculateDeliveryEarnings } = require('../utils/deliveryUtils');
+const { uploadBufferToCloudinary } = require('../middlewares/upload');
 const path = require('path');
 const fs = require('fs');
 
@@ -117,10 +118,31 @@ exports.updateRiderProfile = async (req, res, next) => {
       };
 
       if (req.files?.licensePhoto?.[0]) {
-        riderData.licensePhoto = `/uploads/riders/${req.files.licensePhoto[0].filename}`;
+        const file = req.files.licensePhoto[0];
+        if (file.buffer) {
+          try {
+            const uploadRes = await uploadBufferToCloudinary(file.buffer, "Zewito/riders/license");
+            riderData.licensePhoto = uploadRes.secure_url;
+          } catch (err) {
+            console.error("License photo upload error:", err);
+          }
+        } else if (file.filename) {
+          riderData.licensePhoto = `/uploads/riders/${file.filename}`;
+        }
       }
+
       if (req.files?.vehiclePhoto?.[0]) {
-        riderData.vehiclePhoto = `/uploads/riders/${req.files.vehiclePhoto[0].filename}`;
+        const file = req.files.vehiclePhoto[0];
+        if (file.buffer) {
+          try {
+            const uploadRes = await uploadBufferToCloudinary(file.buffer, "Zewito/riders/vehicle");
+            riderData.vehiclePhoto = uploadRes.secure_url;
+          } catch (err) {
+            console.error("Vehicle photo upload error:", err);
+          }
+        } else if (file.filename) {
+          riderData.vehiclePhoto = `/uploads/riders/${file.filename}`;
+        }
       }
 
       rider = await Rider.create(riderData);
@@ -169,23 +191,31 @@ exports.updateRiderProfile = async (req, res, next) => {
       if (aadharNumber !== undefined && aadharNumber !== '') riderUpdate.aadharNumber = aadharNumber;
 
       if (req.files?.licensePhoto?.[0]) {
-        if (rider.licensePhoto) {
-          const oldPath = path.join(__dirname, '../', rider.licensePhoto);
-          if (fs.existsSync(oldPath)) {
-            try { fs.unlinkSync(oldPath); } catch (e) {}
+        const file = req.files.licensePhoto[0];
+        if (file.buffer) {
+          try {
+            const uploadRes = await uploadBufferToCloudinary(file.buffer, "Zewito/riders/license");
+            riderUpdate.licensePhoto = uploadRes.secure_url;
+          } catch (err) {
+            console.error("License photo update upload error:", err);
           }
+        } else if (file.filename) {
+          riderUpdate.licensePhoto = `/uploads/riders/${file.filename}`;
         }
-        riderUpdate.licensePhoto = `/uploads/riders/${req.files.licensePhoto[0].filename}`;
       }
 
       if (req.files?.vehiclePhoto?.[0]) {
-        if (rider.vehiclePhoto) {
-          const oldPath = path.join(__dirname, '../', rider.vehiclePhoto);
-          if (fs.existsSync(oldPath)) {
-            try { fs.unlinkSync(oldPath); } catch (e) {}
+        const file = req.files.vehiclePhoto[0];
+        if (file.buffer) {
+          try {
+            const uploadRes = await uploadBufferToCloudinary(file.buffer, "Zewito/riders/vehicle");
+            riderUpdate.vehiclePhoto = uploadRes.secure_url;
+          } catch (err) {
+            console.error("Vehicle photo update upload error:", err);
           }
+        } else if (file.filename) {
+          riderUpdate.vehiclePhoto = `/uploads/riders/${file.filename}`;
         }
-        riderUpdate.vehiclePhoto = `/uploads/riders/${req.files.vehiclePhoto[0].filename}`;
       }
 
       if (Object.keys(riderUpdate).length === 0 && !req.files) {

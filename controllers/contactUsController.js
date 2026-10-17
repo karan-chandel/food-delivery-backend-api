@@ -1,12 +1,7 @@
 const ContactUs = require('../models/ContactUs');
+const { uploadBufferToCloudinary } = require('../middlewares/upload');
 const path = require('path');
 const fs = require('fs');
-
-// Ensure contact-us upload directory exists
-const contactUsUploadDir = path.join(__dirname, '../uploads/contact-us');
-if (!fs.existsSync(contactUsUploadDir)) {
-  fs.mkdirSync(contactUsUploadDir, { recursive: true });
-}
 
 // @desc    Submit a contact us form (Public route - no auth required)
 // @route   POST /api/v1/contact-us
@@ -107,7 +102,16 @@ exports.submitContactUsWithAttachment = async (req, res, next) => {
     };
 
     if (req.file) {
-      contactUsData.attachment = `/uploads/menu-items/${req.file.filename}`;
+      if (req.file.buffer) {
+        try {
+          const uploadRes = await uploadBufferToCloudinary(req.file.buffer, "Zewito/contact-us");
+          contactUsData.attachment = uploadRes.secure_url;
+        } catch (err) {
+          console.error("ContactUs attachment upload error:", err);
+        }
+      } else if (req.file.filename) {
+        contactUsData.attachment = `/uploads/menu-items/${req.file.filename}`;
+      }
     }
 
     const contactUs = await ContactUs.create(contactUsData);

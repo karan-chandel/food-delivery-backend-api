@@ -3,7 +3,7 @@ const express = require("express");
 const router = express.Router();
 const Ticket = require("../../models/Ticket");
 const { auth, requireRole } = require("../../middlewares/auth");
-const { upload, handleUploadErrors } = require("../../middlewares/upload");
+const { upload, uploadBufferToCloudinary, handleUploadErrors } = require("../../middlewares/upload");
 const { getUserInfoForTicket, getOrderInfoForTicket } = require("../../utils/ticketUserHelper");
 
 // ✅ HELPER: Check if user owns the ticket
@@ -301,12 +301,26 @@ router.post( "/:ticketId/message",
       delete req.body.attachments;
  ticket.attachments = undefined;
       
-      const attachments = (req.files || []).map(file => ({
-        fileName: file.originalname,
-        fileUrl: `/uploads/menu-items/${file.filename}`,
-        fileType: file.mimetype,
-        fileSize: file.size
-      }));
+      const attachments = [];
+      if (req.files && req.files.length) {
+        for (const file of req.files) {
+          let fileUrl = file.filename ? `/uploads/menu-items/${file.filename}` : "";
+          if (file.buffer) {
+            try {
+              const uploadRes = await uploadBufferToCloudinary(file.buffer, "Zewito/tickets");
+              fileUrl = uploadRes.secure_url;
+            } catch (err) {
+              console.error("Ticket attachment upload error:", err);
+            }
+          }
+          attachments.push({
+            fileName: file.originalname,
+            fileUrl,
+            fileType: file.mimetype,
+            fileSize: file.size
+          });
+        }
+      }
 
       const senderName =
         req.user.role === "admin" || req.user.role === "support"
