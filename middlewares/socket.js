@@ -33,20 +33,22 @@ function initializeSocket(server) {
             const Redis = require("ioredis");
 
             let hasLoggedNotice = false;
+            const isTls = REDIS_URL.startsWith("rediss://");
             const redisOptions = {
-                maxRetriesPerRequest: 1,
+                maxRetriesPerRequest: null,
                 enableReadyCheck: true,
                 lazyConnect: true,
-                connectTimeout: 3000,
+                connectTimeout: 10000,
+                ...(isTls ? { tls: { rejectUnauthorized: false } } : {}),
                 retryStrategy: (times) => {
-                    if (times > 2) {
+                    if (times > 5) {
                         if (!hasLoggedNotice) {
                             hasLoggedNotice = true;
                             console.warn("ℹ️ [Redis Socket.io] Redis server offline. Operating in default single-node in-memory mode.");
                         }
                         return null; // Stop infinite reconnect loop
                     }
-                    return 1000;
+                    return Math.min(times * 500, 3000);
                 }
             };
 
