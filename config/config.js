@@ -16,7 +16,8 @@ const baseAllowlist = [
   "https://rider-portal-pi.vercel.app",
   "https://restaurent-portal.vercel.app",
   "https://admin-portal-food.vercel.app",
-  "https://delivery-hub-pi.vercel.app"
+  "https://delivery-hub-pi.vercel.app",
+  "https://zewito-api-gateway.onrender.com"
 ];
 
 // Enforce JWT_SECRET in production
