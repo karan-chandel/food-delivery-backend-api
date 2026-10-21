@@ -136,6 +136,7 @@ const processOrderDeliveryPayout = async (order, rider) => {
       payload,
       {
         "x-internal-service-token": serviceToken,
+        "x-internal-secret": INTERNAL_SERVICE_SECRET,
       },
       4500 // 4.5s timeout
     );
