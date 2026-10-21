@@ -76,8 +76,9 @@ app.get('/', (req, res) => {
     status: 'active',
     endpoints: {
       auth: `/api/${API_VERSION}/auth`,
-      restaurants: `/api/${API_VERSION}/restaurants`,
       orders: `/api/${API_VERSION}/orders`,
+      rider: `/api/${API_VERSION}/rider`,
+      admin: `/api/${API_VERSION}/admin`,
     },
     timestamp: new Date().toISOString()
   });
@@ -125,11 +126,7 @@ app.use(`/api/${API_VERSION}/orders`, require('./routes/restaurant/orders'));
 app.use(`/api/${API_VERSION}/orders`, require('./routes/rider/orders'));
 app.use(`/api/${API_VERSION}/orders`, require('./routes/rider/location'));
 
-// Rider
-app.use(`/api/${API_VERSION}/rider`, require('./routes/rider'));
 
-// Restaurant profile & analytics (earnings, order aggregation)
-app.use(`/api/${API_VERSION}/restaurants`, require('./routes/restaurant/profile'));
 
 // Notifications, Support, Admin
 app.use(`/api/${API_VERSION}/notifications`, require('./routes/customer/notifications'));
@@ -140,30 +137,11 @@ app.use(`/api/${API_VERSION}/super-admin/tickets`, require('./routes/admin/super
 app.use(`/api/${API_VERSION}/admin/tickets`, require('./routes/admin/tickets'));
 app.use(`/api/${API_VERSION}/tickets`, require('./routes/customer/tickets'));
 
-// ── CATALOG DOMAIN — MOVED TO zewito-catalog-service ─────────────────────────
-// The following routes are now handled by zewito-catalog-service (port 4001):
-//   /api/v1/restaurants  → catalog-service/api/v1/customer/restaurants
-//   /api/v1/menu         → catalog-service/api/v1/customer/menu
-//   /api/v1/cart         → catalog-service/api/v1/customer/cart
-//   /api/v1/coupons      → catalog-service/api/v1/restaurant/coupons
-//
-// Update your frontend CATALOG_API_URL env var to point to catalog-service URL.
+// ── CATALOG DOMAIN — FULLY DECOUPLED (PURE MICROSERVICES ISOLATION) ───────────
+// All catalog routes (/api/v1/restaurants, /api/v1/menu, /api/v1/cart, /api/v1/coupons, /api/v1/food-items)
+// are now exclusively managed by zewito-catalog-service.
+// Order checkout queries the catalog via catalogClient (internal HMAC validated endpoints).
 // ─────────────────────────────────────────────────────────────────────────────
-
-// Catalog routes fallback for local monolithic dev
-app.use(`/api/${API_VERSION}/restaurants`, require('./routes/customer/restaurants'));
-app.use(`/api/${API_VERSION}/menu`, require('./routes/customer/menu'));
-app.get(`/api/${API_VERSION}/food-items`, async (req, res, next) => {
-  try {
-    const MenuItem = require('./models/MenuItem');
-    const items = await MenuItem.find({ isAvailable: true })
-      .populate('restaurantId', 'name address isOpen deliveryTime rating')
-      .lean();
-    res.json({ success: true, data: items, count: items.length });
-  } catch (err) {
-    next(err);
-  }
-});
 
 app.use(errorHandler);
 
