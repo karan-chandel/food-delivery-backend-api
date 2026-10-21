@@ -3,6 +3,7 @@ const User = require('../models/User');
 const Rider = require('../models/Rider');
 const Order = require('../models/Order');
 const { calculateDistance, calculateDeliveryEarnings } = require('../utils/deliveryUtils');
+const logisticsClient = require('../utils/logisticsClient');
 const { uploadBufferToCloudinary } = require('../middlewares/upload');
 const path = require('path');
 const fs = require('fs');
@@ -632,13 +633,17 @@ exports.updateOrderStatusByRider = async (req, res, next) => {
       rider.isAvailable = true;
       rider.currentOrder = null;
 
-      const distance = isNaN(order.deliveryInfo.distance) ? 0 : order.deliveryInfo.distance || 5;
-      const earnings = calculateDeliveryEarnings(distance, order.finalAmount);
+      // 🏍️ Process Delivery Partner Payout via zewito-logistics-service microservice
+      const payoutResult = await logisticsClient.processOrderDeliveryPayout(order, rider);
+      const earnings = payoutResult.totalPayout;
+
       rider.earnings = rider.earnings || {};
       rider.earnings.total = (rider.earnings.total || 0) + earnings;
       rider.earnings.weekly = (rider.earnings.weekly || 0) + earnings;
       rider.earnings.monthly = (rider.earnings.monthly || 0) + earnings;
+
       order.deliveryInfo.riderEarnings = earnings;
+      order.deliveryInfo.payoutSource = payoutResult.source;
     } else if (status === 'failed') {
       rider.cancelledDeliveries = (rider.cancelledDeliveries || 0) + 1;
       rider.isAvailable = true;

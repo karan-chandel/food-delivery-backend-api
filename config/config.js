@@ -34,6 +34,8 @@ module.exports = {
   // DEBUG_OTP is true in dev unless explicitly disabled, and false in production unless explicitly enabled
   DEBUG_OTP: (process.env.DEBUG_OTP && ["true", "1"].includes(String(process.env.DEBUG_OTP).toLowerCase().trim())) || (process.env.NODE_ENV !== "production" && process.env.DEBUG_OTP !== "false"),
   CATALOG_SERVICE_URL: process.env.CATALOG_SERVICE_URL || (process.env.NODE_ENV === "production" ? "https://zewito-catalog-service.onrender.com" : "http://localhost:4001"),
+  LOGISTICS_SERVICE_URL: process.env.LOGISTICS_SERVICE_URL || (process.env.NODE_ENV === "production" ? "https://zewito-logistics-service.onrender.com" : "http://localhost:5051"),
+  AUTH_SERVICE_URL: process.env.AUTH_SERVICE_URL || (process.env.NODE_ENV === "production" ? "https://zewito-auth-service.onrender.com" : "http://localhost:5052"),
   INTERNAL_SERVICE_SECRET: process.env.INTERNAL_SERVICE_SECRET || "d778a0a96422d9c1203f62e9753cbbb2fb9b175e41295e5a1d02ed0224152595",
   REDIS_URL: process.env.REDIS_URL || process.env.REDIS_URI || "",
   FAST2SMS_API_KEY: process.env.FAST2SMS_API_KEY || ""
