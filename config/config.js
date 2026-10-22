@@ -39,5 +39,9 @@ module.exports = {
   ADMIN_SERVICE_URL: process.env.ADMIN_SERVICE_URL || (process.env.NODE_ENV === "production" ? "https://zewito-admin-service.onrender.com" : "http://localhost:5053"),
   INTERNAL_SERVICE_SECRET: process.env.INTERNAL_SERVICE_SECRET || "d778a0a96422d9c1203f62e9753cbbb2fb9b175e41295e5a1d02ed0224152595",
   REDIS_URL: process.env.REDIS_URL || process.env.REDIS_URI || "",
-  FAST2SMS_API_KEY: process.env.FAST2SMS_API_KEY || ""
+  SMS_CLOUD_API_KEY: process.env.SMS_CLOUD_API_KEY || "",
+  SMS_CLOUD_USERNAME: process.env.SMS_CLOUD_USERNAME || "KESHVACREDIT",
+  SMS_CLOUD_SENDER_ID: process.env.SMS_CLOUD_SENDER_ID || "CMTRA",
+  SMS_CLOUD_TEMPLATE_ID: process.env.SMS_CLOUD_TEMPLATE_ID || "1707175922948829561",
+  SMS_CLOUD_GATEWAY_URL: process.env.SMS_CLOUD_GATEWAY_URL || "https://app.smscloud.in/pushapi/sendbulkmsg"
 };

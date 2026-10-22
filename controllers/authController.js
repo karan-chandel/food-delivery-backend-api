@@ -93,7 +93,7 @@ exports.sendOtp = async (req, res, next) => {
 
     console.log(`OTP for ${cleanPhone} (${role}): ${otp}`);
 
-    // 📲 Dispatch live SMS via Fast2SMS Gateway
+    // 📲 Dispatch live SMS via SMSCloud DLT Gateway
     const smsResult = await smsService.sendOtpSms(cleanPhone, otp);
 
     const responseData = {

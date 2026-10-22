@@ -1,5 +1,12 @@
 const https = require("https");
-const { FAST2SMS_API_KEY } = require("../config/config");
+const querystring = require("querystring");
+const {
+  SMS_CLOUD_API_KEY,
+  SMS_CLOUD_USERNAME,
+  SMS_CLOUD_SENDER_ID,
+  SMS_CLOUD_TEMPLATE_ID,
+  SMS_CLOUD_GATEWAY_URL,
+} = require("../config/config");
 
 /**
  * Clean & normalize Indian 10-digit mobile number
@@ -21,50 +28,48 @@ const sanitizeIndianPhoneNumber = (phone) => {
 };
 
 /**
- * Universal HTTPS POST with strict timeout
+ * Universal HTTPS GET for SMSCloud TRAI DLT Gateway
  */
-const postFast2Sms = (payload, apiKey, timeoutMs = 5000) => {
+const postSmsCloud = (phone, otp, timeoutMs = 6000) => {
   return new Promise((resolve, reject) => {
-    const postData = JSON.stringify(payload);
-
-    const options = {
-      hostname: "www.fast2sms.com",
-      path: "/dev/bulkV2",
-      method: "POST",
-      headers: {
-        authorization: apiKey,
-        "Content-Type": "application/json",
-        "Content-Length": Buffer.byteLength(postData),
-      },
-      timeout: timeoutMs,
+    const sender = SMS_CLOUD_SENDER_ID || "CMTRA";
+    const message = `Dear Customer, your OTP for CoverMantra verification is ${otp}. Valid for 10 minutes. - ${sender}`;
+    const payload = {
+      username: SMS_CLOUD_USERNAME || "KESHVACREDIT",
+      apikey: SMS_CLOUD_API_KEY,
+      senderid: sender,
+      tempid: SMS_CLOUD_TEMPLATE_ID || "1707175922948829561",
+      dest_mobileno: phone,
+      message: message,
+      response: "Y",
     };
 
-    const req = https.request(options, (res) => {
+    const queryParams = querystring.stringify(payload);
+    const targetUrl = `${SMS_CLOUD_GATEWAY_URL || "https://app.smscloud.in/pushapi/sendbulkmsg"}?${queryParams}`;
+
+    const req = https.get(targetUrl, { timeout: timeoutMs }, (res) => {
       let rawData = "";
       res.on("data", (chunk) => (rawData += chunk));
       res.on("end", () => {
-        try {
-          const parsed = JSON.parse(rawData);
-          resolve({ statusCode: res.statusCode, body: parsed });
-        } catch (e) {
-          resolve({ statusCode: res.statusCode, body: rawData });
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          resolve({ success: true, statusCode: res.statusCode, body: rawData });
+        } else {
+          resolve({ success: false, statusCode: res.statusCode, body: rawData });
         }
       });
     });
 
     req.on("timeout", () => {
       req.destroy();
-      reject(new Error(`Fast2SMS request timed out after ${timeoutMs}ms`));
+      reject(new Error(`SMSCloud request timed out after ${timeoutMs}ms`));
     });
 
     req.on("error", (err) => reject(err));
-    req.write(postData);
-    req.end();
   });
 };
 
 /**
- * Send OTP SMS via Fast2SMS Gateway
+ * Send OTP SMS strictly via SMSCloud DLT Gateway
  *
  * @param {string} phone - Recipient phone number
  * @param {string} otp - 6-digit OTP code
@@ -81,67 +86,35 @@ const sendOtpSms = async (phone, otp) => {
     };
   }
 
-  if (!FAST2SMS_API_KEY || FAST2SMS_API_KEY.trim() === "") {
-    console.warn("⚠️ [SMS Service] FAST2SMS_API_KEY is not configured in .env. Skipping live SMS.");
+  if (!SMS_CLOUD_API_KEY || SMS_CLOUD_API_KEY.trim() === "") {
+    console.warn("⚠️ [SMS Service] SMS_CLOUD_API_KEY is not configured in .env. Skipping live SMS.");
     return {
       success: false,
       skipped: true,
-      error: "FAST2SMS_API_KEY not configured",
+      error: "SMS_CLOUD_API_KEY not configured",
     };
   }
 
-  console.log(`📲 [SMS Service] Initiating Fast2SMS OTP dispatch to +91 ${cleanPhone.slice(0, 2)}******${cleanPhone.slice(-2)}...`);
+  console.log(`📲 [SMS Service] Initiating SMSCloud OTP dispatch to +91 ${cleanPhone.slice(0, 2)}******${cleanPhone.slice(-2)}...`);
 
   try {
-    // 1. Try dedicated OTP route (Highest deliverability & DLT approved)
-    const otpPayload = {
-      variables_values: String(otp),
-      route: "otp",
-      numbers: cleanPhone,
-    };
-
-    const response = await postFast2Sms(otpPayload, FAST2SMS_API_KEY, 5000);
-
-    // Fast2SMS returns: { return: true, request_id: "...", message: ["SMS sent successfully."] }
-    if (response.body && response.body.return === true) {
-      console.log(`✅ [SMS Service] Fast2SMS OTP delivered successfully! Request ID: ${response.body.request_id || "N/A"}`);
+    const cloudRes = await postSmsCloud(cleanPhone, otp, 6000);
+    if (cloudRes.success) {
+      console.log(`✅ [SMS Service] SMSCloud OTP delivered successfully! Response:`, cloudRes.body);
       return {
         success: true,
-        requestId: response.body.request_id,
-        message: "SMS dispatched successfully",
+        provider: "SMSCloud",
+        message: "SMS dispatched successfully via SMSCloud DLT",
       };
     }
 
-    // If OTP route failed with DLT restriction, try quick SMS route fallback
-    console.warn("⚠️ [SMS Service] Fast2SMS OTP route response:", JSON.stringify(response.body));
-
-    const quickPayload = {
-      route: "q",
-      message: `Your Zewito verification OTP is ${otp}. Valid for 10 minutes. Do not share this OTP with anyone.`,
-      language: "english",
-      flash: 0,
-      numbers: cleanPhone,
-    };
-
-    const fallbackResponse = await postFast2Sms(quickPayload, FAST2SMS_API_KEY, 5000);
-
-    if (fallbackResponse.body && fallbackResponse.body.return === true) {
-      console.log(`✅ [SMS Service] Fast2SMS Quick Route delivered successfully! Request ID: ${fallbackResponse.body.request_id || "N/A"}`);
-      return {
-        success: true,
-        requestId: fallbackResponse.body.request_id,
-        message: "SMS dispatched via fallback route",
-      };
-    }
-
-    console.error("❌ [SMS Service] Fast2SMS Gateway rejected dispatch:", JSON.stringify(fallbackResponse.body));
+    console.error("❌ [SMS Service] SMSCloud Gateway rejected dispatch:", cloudRes.body);
     return {
       success: false,
-      error: fallbackResponse.body?.message?.[0] || fallbackResponse.body?.message || "Fast2SMS gateway error",
+      error: `SMSCloud dispatch failed with status ${cloudRes.statusCode}`,
     };
   } catch (err) {
-    console.error("❌ [SMS Service] Fast2SMS network error:", err.message);
-    // Non-blocking: fail gracefully so the user flow is not crashed
+    console.error("❌ [SMS Service] SMSCloud network error:", err.message);
     return {
       success: false,
       error: err.message,

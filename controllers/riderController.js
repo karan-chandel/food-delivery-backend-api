@@ -374,6 +374,8 @@ exports.updateRiderLocation = async (req, res, next) => {
       });
 
       if (rider.currentOrder) {
+        const order = await Order.findById(rider.currentOrder);
+        if (order) {
           const trackingPayload = {
             orderId: order.orderId,
             riderId: rider._id,

@@ -1,16 +1,22 @@
 # 🍔 ZEWITO CORE PLATFORM - SYSTEM ARCHITECTURE & BLUEPRINT
 
-**Project Name:** Zewito Core Platform (`zewito-core-platform` / `FoodBE`)  
-**Version:** 2.0.0 (Microservices Split)  
-**Type:** Real-time Mission-Critical Food Delivery Engine  
+**Project Name:** Zewito Pure Order Platform (`zewito-order-service` / `FoodBE`)  
+**Version:** 3.0.0 (Enterprise 5-Microservices Architecture)  
+**Type:** Real-time Mission-Critical Food Delivery & Order State Machine Engine  
 **Framework:** Node.js + Express.js  
 **Database:** MongoDB Atlas (`food-delivery` DB)  
-**Real-time Communication:** Socket.io (Live GPS Tracking & Feeds)  
+**Real-time Engine:** Socket.io + Redis Pub/Sub Tracking Bridge + Write-Behind Throttling  
+**Port:** `5050` (Local) / Production Render  
 **Author:** Er. Karan -svg  
 
-> ⚠️ **MICROSERVICES ARCHITECTURE NOTICE (2-Repo Architecture):**  
-> This repository is the **Core Platform** responsible strictly for Order State Machines, Payments, Rider Dispatch, WebSockets, Support Tickets, and Core Authentication.  
-> **Catalog Domain** (Restaurants listing, Menu Items, Shopping Cart, Coupons) has been decoupled into the dedicated microservice repository: **[`zewito-catalog-service`](https://github.com/covermantra-work/zewito-catalog-service)**.
+> ⚠️ **MICROSERVICES TOPOLOGY NOTICE (5-Service Decoupled Architecture):**  
+> This repository is the **Pure Order Service** (`zewito-order-service`) responsible strictly for Order State Machines, Razorpay Payments, Socket.io Dispatch Rooms, and Live Telemetry Bridges.  
+> The remaining domains have been decoupled into dedicated independent microservices:
+> 1. **Catalog Domain:** [`zewito-catalog-service`](https://github.com/covermantra-work/zewito-catalog-service) (Port 4001 - Menus, Restaurants, Carts, Coupons)  
+> 2. **Auth & Identity Domain:** `zewito-auth-service` (Port 5052 - Central IAM, Refresh Tokens, TRAI DLT Compliant SMSCloud Gateway)  
+> 3. **Logistics & Tracking Domain:** `zewito-logistics-service` (Port 5051 - High-frequency Redis Geospatial Geopings, Nearby Riders, Double-Entry Payouts)  
+> 4. **Admin & Governance Domain:** [`zewito-admin-service`](https://github.com/karan-chandel/zewito-admin-service.git) (Port 5053 - Support Tickets, Staff Audits, KYC Approvals)  
+> 5. **API Gateway:** `zewito-api-gateway` (Port 8000 - Dynamic CORS, Unified Routing, WebSocket Proxy)
 
 ---
 
@@ -18,36 +24,36 @@
 
 1. [Project Overview](#project-overview)
 2. [Technology Stack](#technology-stack)
-3. [System Architecture (2-Repo Split)](#system-architecture)
-4. [Database Schema & Models](#database-schema--models)
-5. [API Endpoints & Routes](#api-endpoints--routes)
-6. [Real-time Features (Socket.io)](#real-time-features-socketio)
-7. [Middleware Stack](#middleware-stack)
-8. [File Structure & Organization](#file-structure--organization)
-9. [Key Features](#key-features)
-10. [Data Flow Diagrams](#data-flow-diagrams)
-11. [Authentication & Authorization](#authentication--authorization)
-12. [Deployment & Configuration](#deployment--configuration)
+3. [System Architecture (5-Microservices Topology)](#system-architecture)
+4. [High-Frequency Redis Tracking Engine](#high-frequency-redis-tracking-engine)
+5. [Database Schema & Models](#database-schema--models)
+6. [API Endpoints & Routes](#api-endpoints--routes)
+7. [Real-time Features (Socket.io)](#real-time-features-socketio)
+8. [Middleware Stack](#middleware-stack)
+9. [File Structure & Organization](#file-structure--organization)
+10. [Key Features](#key-features)
+11. [Data Flow Diagrams](#data-flow-diagrams)
+12. [Authentication & Authorization](#authentication--authorization)
+13. [Deployment & Configuration](#deployment--configuration)
 
 ---
 
 ## 🎯 PROJECT OVERVIEW
 
-Zewito Core Platform is the central, mission-critical backend governing:
+Zewito Pure Order Platform is the central, mission-critical backend governing:
 
-- **Order State Machine:** End-to-end order lifecycle management from placement to delivery.
-- **Riders & Logistics:** Live GPS tracking, geo-proximity job dispatch, and rider payout ledgers.
+- **Order State Machine:** End-to-end order lifecycle management from placement (`placed` -> `confirmed` -> `preparing` -> `ready` -> `on_way` -> `delivered` / `cancelled`).
 - **Payments:** Razorpay webhook verification and payment transactions.
-- **Support & Admin:** Role-based support ticket systems, user management, and system monitoring.
 - **Real-Time Sockets:** Live location tracking, order event streams, and real-time dashboard telemetry.
+- **Redis Tracking Bridge:** Cross-service pub/sub event bridge linking logistics geopings to customer socket rooms.
+- **Write-Behind Database Throttling:** Throttles high-frequency rider geopings to MongoDB Atlas, saving 90%+ DB write capacity.
 
 **Key Differentiators:**
-- Real-time order tracking with live GPS coordinates
-- Socket.io integration for instant updates
-- Multi-role authentication system
-- Support ticket system with role-based access
-- Delivery route optimization
-- Image upload management for menu items, riders, admins
+- Zero database I/O for instant map marker animation during active tracking
+- Socket.io integration with Redis Pub/Sub for cross-service scale
+- Robust order lifecycle state machine with rollback capabilities
+- Mongoose population safety with lightweight reference schemas
+- Clean API separation via unified API Gateway
 
 ---
 
@@ -55,127 +61,92 @@ Zewito Core Platform is the central, mission-critical backend governing:
 
 ### Backend Framework
 ```
-├── Node.js Runtime
+├── Node.js Runtime (v20 LTS Alpine)
 ├── Express.js ^5.1.0 - HTTP server & routing
 ├── Socket.io ^4.8.1 - Real-time communication
 └── Morgan ^1.10.1 - HTTP request logging
 ```
 
-### Database & ORM
+### Database & Caching
 ```
-├── MongoDB - NoSQL database
+├── MongoDB Atlas - NoSQL cluster (`food-delivery` DB)
 ├── Mongoose ^8.19.1 - MongoDB object modeling
-└── Connection: MDB_URI (from .env)
+├── Redis 7 / ioredis - Geospatial caching, write-behind locks, and Pub/Sub channel
 ```
 
-### Authentication & Security
+### Authentication & Third-party Services
 ```
-├── jsonwebtoken ^9.0.2 - JWT token generation
-├── bcrypt ^6.0.0 - Password hashing
-├── bcryptjs ^3.0.2 - Alternative bcrypt
-├── cors ^2.8.5 - Cross-origin resource sharing
-└── cookie-parser ^1.4.7 - Cookie handling
-```
-
-### File Handling & Validation
-```
-├── multer ^2.0.2 - File upload handling (use strict MIME/type checks)
-├── validator ^13.15.15 - Data validation & sanit
-ization
-└── fs & path - Local file operations (development)
-```
-
-**Recommendations & Notes:**
-
-- **Menu/image uploads:** Restrict menu-item uploads to image MIME types only (e.g., `image/png`, `image/jpeg`, `image/webp`). Do not accept generic documents for menu images — create a separate route for document uploads (rider docs, admin docs) if needed.
-- **Size limits & scanning:** Enforce size limits (5MB default) and scan uploads for malware in production workflows (or use managed scanners).
-- **Storage strategy:** For production, prefer object storage (S3/GCS/Azure Blob) behind a CDN. For local/dev, keep `uploads/` but add a migration path to cloud storage.
-- **Serving uploads:** App already exposes `GET /uploads/*` (see `app.js`) — ensure proper caching headers and origin policies when serving files.
-- **Metadata & sanitization:** Store upload metadata (filename, path, size, mimetype, uploaderId) in DB and sanitize filenames to avoid path traversal.
-- **Tests & validation:** Add unit/integration tests that assert rejected MIME types, max size errors, and that accepted uploads are accessible at `/uploads/*`.
-
-> Action items (see `docs/TASK_BACKLOG.md`): update `middlewares/upload.js` to enforce image-only for menu items and add tests to validate behavior.
-
-
-### Third-party Services
-
-
-```
-├── twilio ^5.10.2 - SMS/OTP delivery
-└── dotenv ^17.2.3 - Environment configuration
-```
-
-### Development Tools
-```
-├── figlet ^1.9.3 - ASCII art banner
-├── chalk-animation ^2.0.3 - Colored terminal output
-└── nodemon - Auto-reload during development
+├── jsonwebtoken ^9.0.2 - JWT token verification
+├── bcrypt ^6.0.0 / bcryptjs ^3.0.2 - Password hashing
+├── razorpay - Payment verification & webhooks
+└── SMSCloud API - TRAI DLT Compliant SMS Gateway (Template ID: 1707175922948829561, Sender: CMTRA)
 ```
 
 ---
 
-## 🏗️ SYSTEM ARCHITECTURE
+## 🏗️ SYSTEM ARCHITECTURE (5-Microservices Topology)
 
 ### High-Level Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         CLIENT APPLICATIONS                         │
-│  (Web: 3000, 3001, 3002, 3003 | Mobile: Netlify)                   │
-└────────────┬──────────────────────────────────────────────────────┬─┘
-             │                                                        │
-    ┌────────▼─────────┐                          ┌────────────────▼──┐
-    │    REST API      │                          │   Socket.io       │
-    │   HTTP Routes    │                          │ Real-time Events  │
-    └────────┬─────────┘                          └────────────┬──────┘
-             │                                                 │
-    ┌────────▼──────────────────────────────────────────────┬─┘
-    │                   Express.js Server                    │
-    │                    (Port: 5000)                        │
-    └────────┬──────────────────────────────────────────────┘
-             │
-    ┌────────▼──────────────────────────────────────────────┐
-    │              Middleware Stack                          │
-    │  ├─ CORS Middleware                                   │
-    │  ├─ Authentication Middleware                         │
-    │  ├─ Error Handler Middleware                          │
-    │  ├─ File Upload Handler (Multer)                      │
-    │  └─ Socket.io Handler                                 │
-    └────────┬──────────────────────────────────────────────┘
-             │
-    ┌────────▼──────────────────────────────────────────────┐
-    │          CORE API Routes & Controllers                │
-    │  ├─ /api/v1/auth          (User, Rider, Admin Auth)   │
-    │  ├─ /api/v1/orders        (Order State Machine)       │
-    │  ├─ /api/v1/rider         (Rider Dispatch & Payouts)  │
-    │  ├─ /api/v1/tickets       (Support Tickets)           │
-    │  ├─ /api/v1/notifications (User & Rider Alerts)       │
-    │  ├─ /api/v1/super-admin   (Platform Management)       │
-    │  │                                                    │
-    │  │ ⚠️ CATALOG DOMAIN (Moved to zewito-catalog-service):│
-    │  │ ├─ /api/v1/restaurants (Port 4001 / Catalog Cloud) │
-    │  │ ├─ /api/v1/menu        (Port 4001 / Catalog Cloud) │
-    │  │ ├─ /api/v1/cart        (Port 4001 / Catalog Cloud) │
-    │  │ └─ /api/v1/coupons     (Port 4001 / Catalog Cloud) │
-    └────────┬──────────────────────────────────────────────┘
-             │
-    ┌────────▼──────────────────────────────────────────────┐
-    │           Core Mongoose Models & Schemas              │
-    │  ├─ User (Base identity & credentials)                │
-    │  ├─ Customer (Customer profile & addresses)           │
-    │  ├─ Rider (Vehicle, KYC, Wallet, Live Location)       │
-    │  ├─ Order (Order lifecycle, items snapshot, payment)  │
-    │  ├─ Ticket (Support ticket conversations)             │
-    │  ├─ Notification (Alert history)                      │
-    │  ├─ OTP (Phone verification codes)                    │
-    │  └─ Admin (Role-based staff permissions)              │
-    └────────┬──────────────────────────────────────────────┘
-             │
-    ┌────────▼──────────────────────────────────────────────┐
-    │              MongoDB Database                          │
-    │  (Collections for each Model)                          │
-    └───────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           CLIENT APPLICATIONS                           │
+│   (FoodFE DeliveryHub: 3000 | Restaurant: 3001 | Rider: 3002 | Admin)  │
+└────────────────────────────────────┬────────────────────────────────────┘
+                                     │
+                                     ▼ (Port 8000)
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           zewito-api-gateway                            │
+│  - Flutter Dynamic Localhost CORS  - Correlation IDs (X-Request-Id)     │
+│  - WebSocket Upgrade for Socket.io - Unified Route Forwarding           │
+└────┬─────────────────┬───────────────────┬──────────────────┬───────────┘
+     │                 │                   │                  │
+     ▼ (Port 4001)     ▼ (Port 5052)       ▼ (Port 5051)      ▼ (Port 5053)
+┌───────────────┐ ┌────────────────┐ ┌────────────────┐ ┌────────────────┐
+│zewito-catalog-│ │zewito-auth-    │ │zewito-logis-   │ │zewito-admin-   │
+│service        │ │service         │ │tics-service    │ │service         │
+├───────────────┤ ├────────────────┤ ├────────────────┤ ├────────────────┤
+│• Menus & Items│ │• Central IAM   │ │• High-freq     │ │• Support Ticket│
+│• Restaurants  │ │• Refresh Tokens│ │  Redis Geopings│ │• KYC Approvals │
+│• Carts/Coupons│ │• SMSCloud DLT  │ │• Nearby Riders │ │• Staff Audits  │
+└───────────────┘ └────────────────┘ └────────┬───────┘ └────────────────┘
+                                              │
+                         Redis Event Channel  │
+                      `zewito:tracking:events`│
+                                              ▼
+                                    ┌───────────────────┐
+                                    │zewito-order-servic│ (Port 5050 - FoodBE)
+                                    ├───────────────────┤
+                                    │• Order Lifecycle  │
+                                    │• Socket.io Rooms  │
+                                    │• DB Write-Behind  │
+                                    │  Throttling (15s) │
+                                    └─────────┬─────────┘
+                                              │
+                                              ▼
+                                    [DB: food-delivery]
 ```
+
+---
+
+## ⚡ HIGH-FREQUENCY REDIS TRACKING ENGINE
+
+In the v3.0.0 architecture, high-frequency location tracking is decoupled from primary transactional workloads:
+
+1. **Logistics Ingestion:** Riders send geopings (`lat`, `lng`, `speed`, `heading`) every 3-5 seconds to `zewito-logistics-service` (`POST /api/v1/tracking/geoping`).
+2. **Redis Geospatial Indexing:** `zewito-logistics-service` stores coordinates in Redis sorted set (`GEOADD riders:locations`) and hash (`HSET rider:pos:<riderId>`), then publishes to `zewito:tracking:events`.
+3. **Cross-Service Socket.io Broadcast:** `FoodBE` (`setupTrackingSubscriber`) receives the Redis event and immediately broadcasts to the customer tracking room (`order_${orderId}`) via Socket.io with zero database latency:
+   ```javascript
+   io.to(`order_${orderId}`).emit('rider_location_changed', {
+     lat, lng, location: { lat, lng },
+     currentLocation: { lat, lng, address },
+     address, timestamp
+   });
+   ```
+4. **Write-Behind Throttled Persistence:** To protect MongoDB Atlas from being overwhelmed by write operations, `FoodBE` implements `shouldPersistToDb(riderId, 15000)`, writing to MongoDB Atlas only once every 15 seconds per rider.
+
+---
+
 
 ### Application Layers
 
