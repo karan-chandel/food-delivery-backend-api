@@ -5,6 +5,7 @@ const Order = require('../models/Order');
 const { calculateDistance, calculateDeliveryEarnings } = require('../utils/deliveryUtils');
 const logisticsClient = require('../utils/logisticsClient');
 const { uploadBufferToCloudinary } = require('../middlewares/upload');
+const { recordRiderLocation, shouldPersistToDb } = require('../utils/redisTracking');
 const path = require('path');
 const fs = require('fs');
 
@@ -320,14 +321,28 @@ exports.updateRiderLocation = async (req, res, next) => {
   try {
     const { lat, lng, address } = req.body;
 
-    if (!lat || !lng) {
+    if (lat === undefined || lng === undefined) {
       return res.status(400).json({
         success: false,
         message: 'Latitude and longitude are required'
       });
     }
 
-    const rider = await Rider.findById(req.user._id);
+    const numericLat = parseFloat(lat);
+    const numericLng = parseFloat(lng);
+    const riderId = req.user._id;
+
+    // 1. Fast Redis Geospatial index update (< 1ms)
+    recordRiderLocation({
+      riderId,
+      lat: numericLat,
+      lng: numericLng,
+      address,
+      riderName: req.user.name || 'Delivery Partner'
+    }).catch(() => {});
+
+    // 2. Fetch rider & order for socket broadcast
+    const rider = await Rider.findById(riderId);
     if (!rider) {
       return res.status(404).json({
         success: false,
@@ -335,35 +350,56 @@ exports.updateRiderLocation = async (req, res, next) => {
       });
     }
 
-    rider.currentLocation = {
-      lat,
-      lng,
-      address: address || rider.currentLocation?.address,
-      lastUpdated: new Date()
-    };
+    const effectiveAddress = address || rider.currentLocation?.address || '';
 
-    await rider.save();
+    // 3. Write-behind throttling to MongoDB (at most once per 15s)
+    if (shouldPersistToDb(riderId, 15000)) {
+      rider.currentLocation = {
+        lat: numericLat,
+        lng: numericLng,
+        address: effectiveAddress,
+        lastUpdated: new Date()
+      };
+      await rider.save().catch(err => console.warn('⚠️ [Rider DB Write-Behind]', err.message));
+    }
 
+    // 4. Emit real-time tracking events to sockets
     const io = req.app.get('io');
     if (io) {
       io.to(`rider_${rider._id}`).emit('rider_location_updated', {
         riderId: rider._id,
-        location: { lat, lng },
-        address: rider.currentLocation.address,
+        location: { lat: numericLat, lng: numericLng },
+        address: effectiveAddress,
         timestamp: new Date()
       });
 
       if (rider.currentOrder) {
-        const order = await Order.findById(rider.currentOrder);
-        if (order) {
-          io.to(`order_${order.orderId}`).emit('rider_location_changed', {
+          const trackingPayload = {
             orderId: order.orderId,
             riderId: rider._id,
             riderName: rider.name,
-            location: { lat, lng },
-            address: rider.currentLocation.address,
+            lat: numericLat,
+            lng: numericLng,
+            location: { lat: numericLat, lng: numericLng },
+            currentLocation: { lat: numericLat, lng: numericLng, address: effectiveAddress },
+            address: effectiveAddress,
             timestamp: new Date()
-          });
+          };
+
+          io.to(`order_${order.orderId}`).emit('rider_location_changed', trackingPayload);
+          if (order._id && order._id.toString() !== String(order.orderId)) {
+            io.to(`order_${order._id}`).emit('rider_location_changed', trackingPayload);
+          }
+
+          // Cache order tracking in Redis as well
+          recordRiderLocation({
+            riderId,
+            lat: numericLat,
+            lng: numericLng,
+            address: effectiveAddress,
+            orderId: order.orderId,
+            riderName: rider.name
+          }).catch(() => {});
         }
       }
     }

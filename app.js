@@ -5,7 +5,7 @@ const corsMiddleware = require("./middlewares/cors");
 const errorHandler = require("./middlewares/errorHandler");
 
 
-const { API_VERSION } = require("./config/config");
+const { API_VERSION, ADMIN_SERVICE_URL } = require("./config/config");
 const path = require("path");
 const fs = require("fs");
 
@@ -68,17 +68,26 @@ app.use(mongoSanitize);
 app.use(cookieParser());
 app.use("/api", globalApiLimiter);
 
-// Health check & API info - ADD THIS
+// Health check & API info
 app.get('/', (req, res) => {
   res.json({
-    message: 'Zewito Food Delivery API',
+    service: 'Zewito Core Order, Dispatch & Realtime Service (zewito-order-service)',
     version: API_VERSION,
     status: 'active',
+    port: 5050,
+    domain: 'order-dispatch',
     endpoints: {
-      auth: `/api/${API_VERSION}/auth`,
       orders: `/api/${API_VERSION}/orders`,
       rider: `/api/${API_VERSION}/rider`,
-      admin: `/api/${API_VERSION}/admin`,
+      notifications: `/api/${API_VERSION}/notifications`,
+      socket: '/socket.io',
+      uploads: '/uploads',
+    },
+    microservices: {
+      catalog: 'zewito-catalog-service (Port 4001)',
+      logistics: 'zewito-logistics-service (Port 5051)',
+      auth: 'zewito-auth-service (Port 5052)',
+      admin: 'zewito-admin-service (Port 5053)',
     },
     timestamp: new Date().toISOString()
   });
@@ -93,7 +102,7 @@ app.get('/test-socket', (req, res) => {
   });
 });
 
-// ✅ Serve static files from uploads directory (ADD THIS LINE)
+// ✅ Serve static files from uploads directory
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Socket.io middleware Injection
@@ -102,16 +111,21 @@ app.use((req, res, next) => {
   next();
 });
 
-// ==================== PORTAL-BASED ROUTE GATEWAYS ====================
-// ⚠️  CORE PLATFORM ONLY — Catalog domain routes have been split out.
-// Restaurants, Menu, Cart, Coupons → zewito-catalog-service (port 4001)
-// Orders, Riders, Dispatch, Payments, Admin → this service (zewito-core-platform)
+// ==================== CORE ORDER & DISPATCH DOMAIN ====================
+// Order lifecycle (customer, restaurant, rider dispatch)
+app.use(`/api/${API_VERSION}/orders`, require('./routes/customer/orders'));
+app.use(`/api/${API_VERSION}/orders`, require('./routes/restaurant/orders'));
+app.use(`/api/${API_VERSION}/orders`, require('./routes/rider/orders'));
+app.use(`/api/${API_VERSION}/orders`, require('./routes/rider/location'));
 
+// Rider operations (dispatch status, vehicle, deliveries)
 app.use(`/api/${API_VERSION}/rider`, require('./routes/rider'));
-app.use(`/api/${API_VERSION}/admin`, require('./routes/admin'));
 
-// ==================== LEGACY COMPATIBILITY LAYER ====================
-// Auth routes — still served by core (JWT is issued here)
+// Order notifications & alerts
+app.use(`/api/${API_VERSION}/notifications`, require('./routes/customer/notifications'));
+
+// ==================== STANDALONE AUTH COMPATIBILITY LAYER ====================
+// Note: When calling through API Gateway, /api/v1/auth is routed directly to zewito-auth-service (Port 5052).
 app.use(`/api/${API_VERSION}/auth`, require('./routes/customer/auth'));
 app.use(`/api/${API_VERSION}/auth`, require('./routes/rider/auth'));
 app.use(`/api/${API_VERSION}/auth`, require('./routes/restaurant/auth'));
@@ -120,28 +134,26 @@ app.use(`/api/${API_VERSION}/auth/rider`, require('./routes/rider/auth'));
 app.use(`/api/${API_VERSION}/register`, require('./routes/rider/auth'));
 app.use(`/api/${API_VERSION}/register`, require('./routes/restaurant/auth'));
 
-// Orders — core domain
-app.use(`/api/${API_VERSION}/orders`, require('./routes/customer/orders'));
-app.use(`/api/${API_VERSION}/orders`, require('./routes/restaurant/orders'));
-app.use(`/api/${API_VERSION}/orders`, require('./routes/rider/orders'));
-app.use(`/api/${API_VERSION}/orders`, require('./routes/rider/location'));
+// ==================== DECOUPLED SERVICES (ADMIN / CATALOG / LOGISTICS) ====================
+// 🛡️ Admin & Support domain (/admin, /super-admin, /tickets, /contact-us) -> zewito-admin-service (Port 5053)
+const forwardToAdminService = (req, res) => {
+  const baseUrl = (ADMIN_SERVICE_URL || 'http://localhost:5053').replace(/\/+$/, '');
+  const targetUrl = `${baseUrl}${req.originalUrl}`;
+  res.redirect(307, targetUrl);
+};
 
+app.use(`/api/${API_VERSION}/admin`, forwardToAdminService);
+app.use(`/api/${API_VERSION}/super-admin`, forwardToAdminService);
+app.use(`/api/${API_VERSION}/tickets`, forwardToAdminService);
+app.use(`/api/${API_VERSION}/contact-us`, forwardToAdminService);
 
+app.use(`/api/admin`, forwardToAdminService);
+app.use(`/api/super-admin`, forwardToAdminService);
+app.use(`/api/tickets`, forwardToAdminService);
+app.use(`/api/contact-us`, forwardToAdminService);
 
-// Notifications, Support, Admin
-app.use(`/api/${API_VERSION}/notifications`, require('./routes/customer/notifications'));
-app.use(`/api/${API_VERSION}/contact-us`, require('./routes/customer/contactUs'));
-app.use(`/api/${API_VERSION}/contact-us`, require('./routes/admin/contactUs'));
-app.use(`/api/${API_VERSION}/super-admin`, require('./routes/admin/superAdmin'));
-app.use(`/api/${API_VERSION}/super-admin/tickets`, require('./routes/admin/superAdminTickets'));
-app.use(`/api/${API_VERSION}/admin/tickets`, require('./routes/admin/tickets'));
-app.use(`/api/${API_VERSION}/tickets`, require('./routes/customer/tickets'));
-
-// ── CATALOG DOMAIN — FULLY DECOUPLED (PURE MICROSERVICES ISOLATION) ───────────
-// All catalog routes (/api/v1/restaurants, /api/v1/menu, /api/v1/cart, /api/v1/coupons, /api/v1/food-items)
-// are now exclusively managed by zewito-catalog-service.
-// Order checkout queries the catalog via catalogClient (internal HMAC validated endpoints).
-// ─────────────────────────────────────────────────────────────────────────────
+// 🥗 Catalog domain (/restaurants, /menu, /cart, /coupons) -> zewito-catalog-service (Port 4001)
+// 🏍️ Logistics & Payout domain (/payout, /tracking) -> zewito-logistics-service (Port 5051)
 
 app.use(errorHandler);
 

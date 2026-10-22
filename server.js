@@ -37,12 +37,11 @@ async function main() {
     app.set("io", io);
 
     server.listen(PORT, () => {
-      console.log(` Server running at http://localhost:${PORT}`);
-      console.log(` API Version: ${require("./config/config").API_VERSION}`);
-      console.log(` Environment: ${process.env.NODE_ENV || "development"}`);
-      console.log(` Socket.io ready for real-time updates`);
+      console.log(`🚀 zewito-order-service running at http://localhost:${PORT}`);
+      console.log(`📖 API Version: ${require("./config/config").API_VERSION}`);
+      console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
+      console.log(`⚡ Socket.io ready with Redis Geospatial Tracking Engine`);
       console.log(`📊 Admin UI available at: https://admin.socket.io/#`);
-      console.log(`🔗 Or visit: http://localhost:${PORT}`);
     });
 
   } catch (err) {
