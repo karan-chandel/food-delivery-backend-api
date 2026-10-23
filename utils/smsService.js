@@ -101,7 +101,7 @@ const sendOtpSms = async (phone, otp) => {
   console.log(`📲 [SMS Service] Initiating SMSCloud OTP dispatch to +91 ${cleanPhone.slice(0, 2)}******${cleanPhone.slice(-2)}...`);
 
   try {
-    const cloudRes = await postSmsCloud(cleanPhone, otp, 6000);
+    const cloudRes = await postSmsCloud(cleanPhone, otp, 15000);
     if (cloudRes.success) {
       console.log(`✅ [SMS Service] SMSCloud OTP delivered successfully! Response:`, cloudRes.body);
       return {
