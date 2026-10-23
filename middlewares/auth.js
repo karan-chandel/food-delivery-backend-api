@@ -30,17 +30,26 @@ const authenticateToken = async (req, res, next) => {
 
     let decoded = null;
     let lastErr = null;
+    let isExpired = false;
 
     for (const secret of candidateSecrets) {
       try {
         decoded = jwt.verify(token, secret);
         break;
       } catch (err) {
+        if (err.name === "TokenExpiredError") {
+          isExpired = true;
+        }
         lastErr = err;
       }
     }
 
     if (!decoded) {
+      if (isExpired) {
+        const expErr = new Error("jwt expired");
+        expErr.name = "TokenExpiredError";
+        throw expErr;
+      }
       throw lastErr;
     }
     // console.log("🔐 Decoded Token - UserID:", decoded.userId, "Role:", decoded.role);
