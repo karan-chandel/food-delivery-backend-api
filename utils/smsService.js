@@ -30,18 +30,21 @@ const sanitizeIndianPhoneNumber = (phone) => {
 /**
  * Universal HTTPS GET for SMSCloud TRAI DLT Gateway
  */
-const postSmsCloud = (phone, otp, timeoutMs = 6000) => {
+const postSmsCloud = (phone, otp, timeoutMs = 15000) => {
   return new Promise((resolve, reject) => {
-    const sender = SMS_CLOUD_SENDER_ID || "CMTRA";
-    const message = `Dear Customer, your OTP for CoverMantra verification is ${otp}. Valid for 10 minutes. - ${sender}`;
+    const signature = SMS_CLOUD_SENDER_ID || "CMTRA";
+    const templateId = SMS_CLOUD_TEMPLATE_ID || "1707175922948829561";
+    const smsMessage = `Dear customer, ${otp} is your login OTP. Valid for 5 minutes. Please do not share with anyone. Regards, CoverMantra`;
+    const dest = phone.length === 10 ? `91${phone}` : phone;
+
     const payload = {
       username: SMS_CLOUD_USERNAME || "KESHVACREDIT",
+      dest: dest,
       apikey: SMS_CLOUD_API_KEY,
-      senderid: sender,
-      tempid: SMS_CLOUD_TEMPLATE_ID || "1707175922948829561",
-      dest_mobileno: phone,
-      message: message,
-      response: "Y",
+      signature: signature,
+      msgtype: "PM",
+      msgtxt: smsMessage,
+      templateid: templateId,
     };
 
     const queryParams = querystring.stringify(payload);

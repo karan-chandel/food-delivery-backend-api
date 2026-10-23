@@ -41,7 +41,7 @@ module.exports = {
   REDIS_URL: process.env.REDIS_URL || process.env.REDIS_URI || "",
   SMS_CLOUD_API_KEY: process.env.SMS_CLOUD_API_KEY || "",
   SMS_CLOUD_USERNAME: process.env.SMS_CLOUD_USERNAME || "KESHVACREDIT",
-  SMS_CLOUD_SENDER_ID: process.env.SMS_CLOUD_SENDER_ID || "CMTRA",
+  SMS_CLOUD_SENDER_ID: process.env.SMS_CLOUD_SIGNATURE || process.env.SMS_CLOUD_SENDER_ID || "CMTRA",
   SMS_CLOUD_TEMPLATE_ID: process.env.SMS_CLOUD_TEMPLATE_ID || "1707175922948829561",
-  SMS_CLOUD_GATEWAY_URL: process.env.SMS_CLOUD_GATEWAY_URL || "https://app.smscloud.in/pushapi/sendbulkmsg"
+  SMS_CLOUD_GATEWAY_URL: process.env.SMS_CLOUD_URL || process.env.SMS_CLOUD_GATEWAY_URL || "https://app.smscloud.in/pushapi/sendbulkmsg"
 };
