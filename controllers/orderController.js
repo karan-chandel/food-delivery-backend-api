@@ -148,6 +148,7 @@ exports.createOrder = async (req, res, next) => {
         success: false,
         error: validationResult?.message || "Cart validation failed",
         reason: validationResult?.reason,
+        isRemote: validationResult?.isRemote ?? false,
       });
     }
 

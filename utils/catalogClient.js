@@ -10,7 +10,7 @@ const Coupon = require("../models/Coupon");
  * Universal HTTP POST helper using built-in Node modules or fetch
  * Zero external dependencies, with strict configurable timeout
  */
-const postJson = async (urlStr, payload, headers = {}, timeoutMs = 3500) => {
+const postJson = async (urlStr, payload, headers = {}, timeoutMs = 25000) => {
   if (typeof globalThis.fetch === "function") {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -281,9 +281,9 @@ const validateCart = async ({ restaurantId, items, couponCode }) => {
         couponCode,
       },
       {
-        "X-Internal-Secret": INTERNAL_SERVICE_SECRET,
+        "X-Internal-Secret": INTERNAL_SERVICE_SECRET || "d778a0a96422d9c1203f62e9753cbbb2fb9b175e41295e5a1d02ed0224152595",
       },
-      3500 // 3.5s timeout
+      25000 // 25s timeout to comfortably absorb Render cold starts
     );
 
     if (status === 200 && data) {
