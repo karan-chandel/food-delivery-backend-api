@@ -111,6 +111,10 @@ exports.createOrder = async (req, res, next) => {
       });
     }
 
+    if (paymentMethod === "cash_on_delivery" || paymentMethod === "cash") {
+      paymentMethod = "cod";
+    }
+
     const cart = await Cart.findOne({ userId: req.user._id });
 
     if (!items || items.length === 0) {
