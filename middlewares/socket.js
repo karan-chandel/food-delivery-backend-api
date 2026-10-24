@@ -325,8 +325,45 @@ function initializeSocket(server) {
                     if (!user && decoded.phone) {
                         user = await Rider.findOne({ phone: decoded.phone });
                     }
+                    if (!user) {
+                        try {
+                            user = await Rider.create({
+                                _id: decoded.userId,
+                                name: decoded.name || `Rider_${(decoded.phone || "0000").slice(-4)}`,
+                                phone: decoded.phone || "0000000000",
+                                role: 'rider',
+                                isVerified: decoded.isVerified ?? true,
+                                isActive: true,
+                            });
+                        } catch {
+                            user = await Rider.findOne({ phone: decoded.phone });
+                        }
+                    }
                 } else if (role === 'restaurant') {
                     user = await RestaurantUser.findById(decoded.userId);
+                    if (!user && decoded.phone) {
+                        user = await RestaurantUser.findOne({ phone: decoded.phone });
+                    }
+                    if (!user && decoded.restaurantId) {
+                        user = await RestaurantUser.findOne({ restaurantId: decoded.restaurantId });
+                    }
+                    if (!user) {
+                        try {
+                            user = await RestaurantUser.create({
+                                _id: decoded.userId,
+                                name: decoded.name || decoded.businessName || "Restaurant Partner",
+                                phone: decoded.phone || "0000000000",
+                                email: decoded.email,
+                                role: 'restaurant',
+                                businessName: decoded.businessName || "Restaurant Partner",
+                                restaurantId: decoded.restaurantId,
+                                isVerified: decoded.isVerified ?? true,
+                                isActive: true,
+                            });
+                        } catch {
+                            user = await RestaurantUser.findOne({ phone: decoded.phone });
+                        }
+                    }
                 }
 
                 if (!user) {
