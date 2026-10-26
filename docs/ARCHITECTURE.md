@@ -6,47 +6,59 @@
 
 ---
 
-## 🏛️ 1. Architecture Overview: Which Backend is Active?
+## 🏛️ 1. Architecture Overview: Microservices Fleet Topology
 
-The Zewito Backend is structured as a **Decoupled 2-Service Microservices Architecture**:
+The Zewito Backend is structured as an **Enterprise 5-Service Microservices Architecture** orchestrated by a Central API Gateway:
 
 ```
                               ┌────────────────────────────────────────┐
                               │            Clients                     │
-                              │  - Web Admin / Rider / Delivery Hub    │
+                              │  - Web Admin / Restaurant / Delivery   │
                               │  - Flutter Web & Mobile (Android/iOS)  │
                               └───────────────────┬────────────────────┘
                                                   │
-                         ┌────────────────────────┴────────────────────────┐
-                         │                                                 │
-                         ▼ (Port 5050)                                     ▼ (Port 4001)
-         ┌───────────────────────────────┐                 ┌───────────────────────────────┐
-         │     zewito-core-platform      │                 │    zewito-catalog-service     │
-         │          (`FoodBE`)           │                 │   (`zewito-catalog-service`)  │
-         ├───────────────────────────────┤                 ├───────────────────────────────┤
-         │ • Authentication & JWT        │                 │ • Restaurant Discovery & Info │
-         │ • Order State Machine         │  HMAC Internal  │ • Menus & Categories          │
-         │ • Rider Dispatch & Geo-logic  │◄───────────────►│ • Food Items & Addons         │
-         │ • Socket.io Live GPS Tracking │  Service Secret │ • Shopping Cart (CRUD)        │
-         │ • Razorpay Payments & Ledgers │                 │ • Restaurant Coupons          │
-         │ • Support Tickets & Alerts    │                 │                               │
-         └───────────────┬───────────────┘                 └───────────────┬───────────────┘
-                         │                                                 │
-                         └────────────────────────┬────────────────────────┘
-                                                  │
-                                                  ▼
-                               ┌─────────────────────────────────────┐
-                               │       MongoDB Atlas Cluster         │
-                               │        (`zewito-catalog` DB)        │
-                               └─────────────────────────────────────┘
+                                                  ▼ (Port 8000)
+                              ┌────────────────────────────────────────┐
+                              │           zewito-api-gateway           │
+                              │  (Central Routing, CORS, Keep-Alive)   │
+                              └───────┬─────┬───────┬─────┬───────┬────┘
+                                      │     │       │     │       │
+                  ┌───────────────────┘     │       │     │       └───────────────────┐
+                  ▼ (Port 4001)             ▼(5052) │     ▼ (5051)                    ▼ (Port 5050)
+  ┌───────────────────────────────┐ ┌─────────────┐ │ ┌───────────────────────┐ ┌───────────────────────────────┐
+  │    zewito-catalog-service     │ │zewito-auth- │ │ │zewito-logistics-servic│ │     zewito-order-service      │
+  │   (`zewito-catalog-service`)  │ │service      │ │ │(Payout/Tracking Engine│ │          (`FoodBE`)           │
+  ├───────────────────────────────┤ ├─────────────┤ │ ├───────────────────────┤ ├───────────────────────────────┤
+  │ • Restaurant Discovery & Info │ │• Central IAM│ │ │• Realtime Redis GEO   │ │ • Order State Machine         │
+  │ • Menus & Categories (Dishes) │ │• Rotatable  │ │ │• High-freq Geopings   │ │ • Socket.io Live GPS Tracking │
+  │ • Restaurant Onboarding & KYC │ │  Tokens     │ │ │• Double-Entry Wallet  │ │ • Razorpay Payments & Ledgers │
+  │ • Shopping Cart (CRUD)        │ │• SMSCloud   │ │ │• Distance Slabs Payout│ │ • Customer Order History      │
+  │ • Restaurant Coupons          │ │  DLT Gateway│ │ └───────────┬───────────┘ └───────────────┬───────────────┘
+  └───────────────┬───────────────┘ └─────┬───────┘ │             │                              │
+                  │                       │         ▼ (5053)      │                              │
+                  │                       │  ┌──────────────┐     │                              │
+                  │                       │  │zewito-admin- │     │                              │
+                  │                       │  │service       │     │                              │
+                  │                       │  ├──────────────┤     │                              │
+                  │                       │  │• Audit Logs  │     │                              │
+                  │                       │  │• KYC Approval│     │                              │
+                  │                       │  │• CRM Tickets │     │                              │
+                  │                       │  └──────┬───────┘     │                              │
+                  ▼                       ▼         ▼             ▼                              ▼
+         [DB: zewito-catalog]      [DB: zewito-auth] [DB: zewito-admin] [DB: zewito-logistics]   [DB: food-delivery]
 ```
 
-### Clarification on Repositories:
-* **Active Service 1: `FoodBE` (Port 5050)**: Core Platform Engine (Orders, Payments, Riders, Sockets, Auth).
-* **Active Service 2: `zewito-catalog-service` (Port 4001)**: Catalog & Discovery Engine (Restaurants, Menu, Cart, Coupons).
-* **Inactive / Legacy: `FoodBE_Customer`**: Deprecated monolithic prototype. Kept for historical reference; do not deploy or route traffic here.
+### Active Repositories in Production:
+* **API Gateway (`zewito-api-gateway`) (Port 8000)**: Single entry point, CORS, and 9 AM - 6 PM IST Smart Anti-Sleep Heartbeat.
+* **Catalog Service (`zewito-catalog-service`) (Port 4001)**: Restaurant discovery, KYC submissions, menus, and carts.
+* **Core Order Engine (`FoodBE`) (Port 5050)**: Order state machine, payments, and real-time Socket.io dispatch rooms.
+* **Auth & IAM (`zewito-auth-service`) (Port 5052)**: User registration, OTP generation/verification (SMSCloud), and JWT lifecycle.
+* **Logistics & Tracking (`zewito-logistics-service`) (Port 5051)**: Rider GPS tracking, Redis geospatial index, and automated payouts.
+* **Admin Governance (`zewito-admin-service`) (Port 5053)**: Partner verification approvals, customer support tickets, and audit trails.
+* **Deprecated**: `FoodBE_Customer` (monolithic prototype; not deployed).
 
 ---
+
 
 ## 🔒 2. Security Audit & Vulnerability Hardening (Loophole Assessment)
 

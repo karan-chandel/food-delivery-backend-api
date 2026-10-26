@@ -5,14 +5,15 @@ const { auth, requireRole } = require("../../middlewares/auth");
 const idempotency = require("../../middlewares/idempotency");
 
 router.use(auth);
-router.use(requireRole(['customer']));
 
 // 🛡️ TSK-203: Checkout Idempotency & In-Flight Lock (120s TTL)
-router.post("/", idempotency({ ttlSeconds: 120 }), orderController.createOrder);
+router.post("/", requireRole(['customer']), idempotency({ ttlSeconds: 120 }), orderController.createOrder);
+router.patch("/:orderId/cancel", requireRole(['customer']), orderController.cancelOrder);
+router.patch("/:orderId/review", requireRole(['customer']), orderController.addOrderReview);
+
+// Polymorphic order endpoints (delegates role filtering to orderController)
 router.get("/my-orders", orderController.getMyOrders);
 router.get("/:orderId", orderController.getOrderById);
-router.patch("/:orderId/cancel", orderController.cancelOrder);
 router.get("/track/:orderId", orderController.trackOrder);
-router.patch("/:orderId/review", orderController.addOrderReview);
 
 module.exports = router;
