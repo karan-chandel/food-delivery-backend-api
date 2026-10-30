@@ -852,6 +852,20 @@ exports.completeRestaurant = async (req, res, next) => {
       });
     }
 
+    if (email && !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid contact email address format (e.g. contact@restaurant.com)'
+      });
+    }
+
+    if (upiId && !/^[a-zA-Z0-9.\-_]{2,50}@[a-zA-Z0-9.\-_]{2,30}$/.test(upiId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid UPI ID format. Expected format: username@bank (e.g. 9812345678@paytm or chef@okhdfcbank)'
+      });
+    }
+
     let userUpdated = false;
     if (ownerName && ownerName !== '') {
       user.name = ownerName;
