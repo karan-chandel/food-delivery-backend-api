@@ -836,10 +836,10 @@ exports.completeRestaurant = async (req, res, next) => {
       bankAccountNumber, bankIFSC, upiId
     } = req.body;
 
-    if (!businessName || !addressLine1 || !city || !state || !pincode) {
+    if (!businessName || !addressLine1 || !city || !state || !pincode || !latitude || !longitude) {
       return res.status(400).json({
         success: false,
-        error: 'Business name, address line1, city, state, and pincode are required'
+        error: 'Business name, address line1, city, state, pincode, latitude, and longitude are required'
       });
     }
 
