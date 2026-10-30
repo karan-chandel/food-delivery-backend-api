@@ -843,6 +843,15 @@ exports.completeRestaurant = async (req, res, next) => {
       });
     }
 
+    const parsedLat = parseFloat(latitude);
+    const parsedLng = parseFloat(longitude);
+    if (isNaN(parsedLat) || isNaN(parsedLng) || parsedLat < -90 || parsedLat > 90 || parsedLng < -180 || parsedLng > 180) {
+      return res.status(400).json({
+        success: false,
+        error: 'Valid GPS latitude (-90 to 90) and longitude (-180 to 180) are required'
+      });
+    }
+
     let userUpdated = false;
     if (ownerName && ownerName !== '') {
       user.name = ownerName;
@@ -870,8 +879,8 @@ exports.completeRestaurant = async (req, res, next) => {
         state,
         pincode,
         geolocation: {
-          latitude: latitude ? parseFloat(latitude) : null,
-          longitude: longitude ? parseFloat(longitude) : null
+          latitude: parsedLat,
+          longitude: parsedLng
         }
       },
       contact: {
