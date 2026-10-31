@@ -342,6 +342,18 @@ exports.createOrder = async (req, res, next) => {
   }
 };
 
+// Helper to robustly resolve restaurantId for restaurant role across schemas and JWT
+async function resolveRestaurantIdForUser(user) {
+  if (user.restaurantId) return user.restaurantId.toString();
+  const restUser = await RestaurantUser.findById(user._id);
+  if (restUser?.restaurantId) return restUser.restaurantId.toString();
+  const restDoc = await Restaurant.findOne({
+    $or: [{ ownerId: user._id }, { createdBy: user._id }],
+  });
+  if (restDoc?._id) return restDoc._id.toString();
+  return null;
+}
+
 // ✅ Get My Orders
 exports.getMyOrders = async (req, res, next) => {
   try {
@@ -351,9 +363,9 @@ exports.getMyOrders = async (req, res, next) => {
 
     if (req.user.role === 'customer') filter.customerId = req.user._id;
     else if (req.user.role === 'restaurant') {
-      const restUser = await RestaurantUser.findById(req.user._id);
-      if (!restUser || !restUser.restaurantId) return res.status(404).json({ success: false, error: "Restaurant not found" });
-      filter.restaurantId = restUser.restaurantId;
+      const resolvedResId = await resolveRestaurantIdForUser(req.user);
+      if (!resolvedResId) return res.status(404).json({ success: false, error: "Restaurant not found for this partner account" });
+      filter.restaurantId = resolvedResId;
     } else if (req.user.role === 'rider') filter.riderId = req.user._id;
 
     if (status) filter.status = status;
@@ -420,8 +432,8 @@ exports.getOrderById = async (req, res, next) => {
       return res.status(403).json({ success: false, error: "Not authorized" });
 
     if (req.user.role === 'restaurant') {
-      const restUser = await RestaurantUser.findById(req.user._id);
-      if (!restUser || order.restaurantId._id.toString() !== restUser.restaurantId.toString())
+      const resolvedResId = await resolveRestaurantIdForUser(req.user);
+      if (!resolvedResId || order.restaurantId._id.toString() !== resolvedResId)
         return res.status(403).json({ success: false, error: "Not authorized" });
     }
 
@@ -477,8 +489,8 @@ exports.updateOrderStatus = async (req, res, next) => {
     }
 
     if (req.user.role === 'restaurant') {
-      const restUser = await RestaurantUser.findById(req.user._id);
-      if (!restUser || order.restaurantId._id.toString() !== restUser.restaurantId.toString()) {
+      const resolvedResId = await resolveRestaurantIdForUser(req.user);
+      if (!resolvedResId || order.restaurantId._id.toString() !== resolvedResId) {
         return res.status(403).json({ success: false, error: "Not allowed" });
       }
     }
@@ -803,8 +815,8 @@ exports.trackOrder = async (req, res, next) => {
       return res.status(403).json({ success: false, error: "Not authorized" });
 
     if (req.user.role === 'restaurant') {
-      const restUser = await RestaurantUser.findById(req.user._id);
-      if (!restUser || order.restaurantId._id.toString() !== restUser.restaurantId.toString())
+      const resolvedResId = await resolveRestaurantIdForUser(req.user);
+      if (!resolvedResId || order.restaurantId._id.toString() !== resolvedResId)
         return res.status(403).json({ success: false, error: "Not authorized" });
     }
 

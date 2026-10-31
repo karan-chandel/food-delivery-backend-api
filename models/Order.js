@@ -172,7 +172,7 @@ orderSchema.pre('save', function (next) {
   });
 
   // ✅ Add to status history
-  if (this.isModified('status')) {
+  if (this.isModified('status') && (!this.statusHistory?.length || this.statusHistory[this.statusHistory.length - 1].status !== this.status)) {
     this.statusHistory.push({
       status: this.status,
       updatedBy: this.riderId || this.customerId
