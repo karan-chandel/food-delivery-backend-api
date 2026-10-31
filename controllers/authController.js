@@ -843,6 +843,13 @@ exports.completeRestaurant = async (req, res, next) => {
       });
     }
 
+    if (!/^[1-9][0-9]{5}$/.test(String(pincode).trim())) {
+      return res.status(400).json({
+        success: false,
+        error: 'Pincode must be a valid 6-digit Indian postal code (e.g. 125001)'
+      });
+    }
+
     const parsedLat = parseFloat(latitude);
     const parsedLng = parseFloat(longitude);
     if (isNaN(parsedLat) || isNaN(parsedLng) || parsedLat < -90 || parsedLat > 90 || parsedLng < -180 || parsedLng > 180) {
@@ -852,7 +859,14 @@ exports.completeRestaurant = async (req, res, next) => {
       });
     }
 
-    if (email && !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) {
+    const contactEmail = (email || user.email || "").trim();
+    if (!contactEmail) {
+      return res.status(400).json({
+        success: false,
+        error: 'Official contact email is required for restaurant verification'
+      });
+    }
+    if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(contactEmail)) {
       return res.status(400).json({
         success: false,
         error: 'Invalid contact email address format (e.g. contact@restaurant.com)'
