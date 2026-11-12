@@ -121,6 +121,9 @@ app.use(`/api/${API_VERSION}/orders`, require('./routes/rider/location'));
 // Rider operations (dispatch status, vehicle, deliveries)
 app.use(`/api/${API_VERSION}/rider`, require('./routes/rider'));
 
+// Inter-service synchronization routes (X-Internal-Secret protected)
+app.use(`/api/${API_VERSION}/internal`, require('./routes/internal'));
+
 // Order notifications & alerts
 app.use(`/api/${API_VERSION}/notifications`, require('./routes/customer/notifications'));
 

@@ -4,6 +4,7 @@ const Rider = require('../models/Rider');
 const Order = require('../models/Order');
 const { calculateDistance, calculateDeliveryEarnings } = require('../utils/deliveryUtils');
 const logisticsClient = require('../utils/logisticsClient');
+const riderClient = require('../utils/riderClient');
 const { uploadBufferToCloudinary } = require('../middlewares/upload');
 const { recordRiderLocation, shouldPersistToDb } = require('../utils/redisTracking');
 const path = require('path');
@@ -418,7 +419,7 @@ exports.updateRiderLocation = async (req, res, next) => {
 // ✅ Get Available Orders for Rider
 exports.getAvailableOrders = async (req, res, next) => {
   try {
-    const rider = await Rider.findById(req.user._id);
+    const rider = await riderClient.getRiderById(req.user._id);
     if (!rider || !rider.isOnline || !rider.isAvailable) {
       return res.status(400).json({
         success: false,
@@ -471,7 +472,7 @@ exports.getAvailableOrders = async (req, res, next) => {
 // ✅ Accept Order for Delivery
 exports.acceptOrder = async (req, res, next) => {
   try {
-    const rider = await Rider.findById(req.user._id);
+    const rider = await riderClient.getRiderById(req.user._id);
     if (!rider || !rider.isAvailable) {
       return res.status(400).json({
         success: false,
@@ -486,33 +487,33 @@ exports.acceptOrder = async (req, res, next) => {
       ]
     };
 
-    const order = await Order.findOne(orderQuery)
+    const existingOrder = await Order.findOne(orderQuery)
       .populate('restaurantId', 'name coordinates')
       .populate('customerId', 'name phone');
 
-    if (!order) {
+    if (!existingOrder) {
       return res.status(404).json({
         success: false,
         message: 'Order not found'
       });
     }
 
-    if (order.status !== 'ready_for_pickup') {
+    if (existingOrder.status !== 'ready_for_pickup') {
       return res.status(400).json({
         success: false,
         message: 'Order is not ready for pickup'
       });
     }
 
-    if (order.riderId) {
-      return res.status(400).json({
+    if (existingOrder.riderId) {
+      return res.status(409).json({
         success: false,
         message: 'Order already assigned to another rider'
       });
     }
 
-    const restCoords = order.restaurantId?.coordinates;
-    const custCoords = order.deliveryAddress?.coordinates;
+    const restCoords = existingOrder.restaurantId?.coordinates;
+    const custCoords = existingOrder.deliveryAddress?.coordinates;
 
     const restLat = restCoords?.lat;
     const restLng = restCoords?.lng;
@@ -524,28 +525,55 @@ exports.acceptOrder = async (req, res, next) => {
       deliveryDistance = calculateDistance(restLat, restLng, custLat, custLng);
     }
 
-    const estimatedEarnings = calculateDeliveryEarnings(deliveryDistance, order.finalAmount);
+    const estimatedEarnings = calculateDeliveryEarnings(deliveryDistance, existingOrder.finalAmount);
+    const estimatedDeliveryTime = new Date(Date.now() + 30 * 60 * 1000);
 
-    order.riderId = rider._id;
-    order.status = 'assigned_to_rider';
-    order.deliveryInfo = order.deliveryInfo || {};
-    order.deliveryInfo.assignedAt = new Date();
-    order.deliveryInfo.estimatedDeliveryTime = new Date(Date.now() + 30 * 60 * 1000);
-    order.deliveryInfo.riderEarnings = estimatedEarnings;
-    order.deliveryInfo.distance = deliveryDistance;
+    // Atomic conditional update prevents concurrent double-accept race conditions
+    const order = await Order.findOneAndUpdate(
+      {
+        _id: existingOrder._id,
+        status: 'ready_for_pickup',
+        $or: [{ riderId: { $exists: false } }, { riderId: null }]
+      },
+      {
+        $set: {
+          riderId: rider._id,
+          status: 'assigned_to_rider',
+          'deliveryInfo.assignedAt': new Date(),
+          'deliveryInfo.estimatedDeliveryTime': estimatedDeliveryTime,
+          'deliveryInfo.riderEarnings': estimatedEarnings,
+          'deliveryInfo.distance': deliveryDistance
+        }
+      },
+      { new: true }
+    )
+      .populate('restaurantId', 'name coordinates')
+      .populate('customerId', 'name phone');
 
-    rider.isAvailable = false;
-    rider.currentOrder = order._id;
+    if (!order) {
+      return res.status(409).json({
+        success: false,
+        message: 'Order already assigned to another rider'
+      });
+    }
 
-    await Promise.all([order.save(), rider.save()]);
+    await Promise.all([
+      Rider.findByIdAndUpdate(rider._id, {
+        $set: { isAvailable: false, currentOrder: order._id }
+      }).catch(() => {}),
+      riderClient.syncRiderStats(rider._id, {
+        isAvailable: false,
+        currentOrder: order._id
+      })
+    ]);
 
     const io = req.app.get('io');
     if (io) {
       const rooms = [
-        `restaurant_${order.restaurantId._id}`,
-        `user_${order.customerId._id}`,
+        order.restaurantId?._id ? `restaurant_${order.restaurantId._id}` : null,
+        order.customerId?._id ? `user_${order.customerId._id}` : null,
         `order_${order.orderId}`
-      ];
+      ].filter(Boolean);
 
       emitSocket(io, rooms, 'order_assigned_to_rider', {
         orderId: order.orderId,
@@ -557,8 +585,8 @@ exports.acceptOrder = async (req, res, next) => {
           vehicleType: rider.vehicleType,
           vehicleNo: rider.vehicleNo
         },
-        customerId: order.customerId._id,
-        restaurantId: order.restaurantId._id,
+        customerId: order.customerId?._id,
+        restaurantId: order.restaurantId?._id,
         estimatedDeliveryTime: order.deliveryInfo.estimatedDeliveryTime,
         timestamp: new Date()
       });
@@ -624,7 +652,14 @@ exports.updateOrderStatusByRider = async (req, res, next) => {
       });
     }
 
-    const rider = await Rider.findById(req.user._id);
+    const rider = await riderClient.getRiderById(req.user._id);
+    if (!rider) {
+      return res.status(404).json({
+        success: false,
+        message: 'Rider not found'
+      });
+    }
+
     const orderQuery = {
       $or: [
         { orderId: req.params.orderId },
@@ -655,10 +690,15 @@ exports.updateOrderStatusByRider = async (req, res, next) => {
       ...(lat && lng && { location: { lat, lng } })
     });
 
+    const riderSyncPayload = {};
+    const localRiderUpdate = {};
+
     if (status === 'picked_up') {
+      order.deliveryInfo = order.deliveryInfo || {};
       order.deliveryInfo.pickedUpAt = new Date();
     } else if (status === 'delivered') {
       order.deliveredAt = new Date();
+      order.deliveryInfo = order.deliveryInfo || {};
       order.deliveryInfo.deliveredAt = new Date();
       order.deliveryInfo.actualDeliveryTime = new Date();
 
@@ -666,37 +706,53 @@ exports.updateOrderStatusByRider = async (req, res, next) => {
         order.paymentStatus = 'paid';
       }
 
-      rider.totalDeliveries += 1;
-      rider.completedDeliveries += 1;
-      rider.isAvailable = true;
-      rider.currentOrder = null;
-
       // 🏍️ Process Delivery Partner Payout via zewito-logistics-service microservice
       const payoutResult = await logisticsClient.processOrderDeliveryPayout(order, rider);
       const earnings = payoutResult.totalPayout;
 
-      rider.earnings = rider.earnings || {};
-      rider.earnings.total = (rider.earnings.total || 0) + earnings;
-      rider.earnings.weekly = (rider.earnings.weekly || 0) + earnings;
-      rider.earnings.monthly = (rider.earnings.monthly || 0) + earnings;
-
       order.deliveryInfo.riderEarnings = earnings;
       order.deliveryInfo.payoutSource = payoutResult.source;
+
+      riderSyncPayload.isAvailable = true;
+      riderSyncPayload.currentOrder = null;
+      riderSyncPayload.incrementTotalDeliveries = 1;
+      riderSyncPayload.incrementCompletedDeliveries = 1;
+      riderSyncPayload.addEarnings = earnings;
+
+      localRiderUpdate.$set = { isAvailable: true, currentOrder: null };
+      localRiderUpdate.$inc = {
+        totalDeliveries: 1,
+        completedDeliveries: 1,
+        'earnings.total': earnings,
+        'earnings.weekly': earnings,
+        'earnings.monthly': earnings
+      };
     } else if (status === 'failed') {
-      rider.cancelledDeliveries = (rider.cancelledDeliveries || 0) + 1;
-      rider.isAvailable = true;
-      rider.currentOrder = null;
+      riderSyncPayload.isAvailable = true;
+      riderSyncPayload.currentOrder = null;
+      riderSyncPayload.incrementCancelledDeliveries = 1;
+
+      localRiderUpdate.$set = { isAvailable: true, currentOrder: null };
+      localRiderUpdate.$inc = { cancelledDeliveries: 1 };
     }
 
-    await Promise.all([order.save(), rider.save()]);
+    const tasks = [order.save()];
+    if (Object.keys(localRiderUpdate).length > 0) {
+      tasks.push(Rider.findByIdAndUpdate(rider._id, localRiderUpdate).catch(() => {}));
+    }
+    if (Object.keys(riderSyncPayload).length > 0) {
+      tasks.push(riderClient.syncRiderStats(rider._id, riderSyncPayload));
+    }
+
+    await Promise.all(tasks);
 
     const io = req.app.get('io');
     if (io) {
       const rooms = [
-        `user_${order.customerId._id}`,
-        `restaurant_${order.restaurantId._id}`,
+        order.customerId?._id ? `user_${order.customerId._id}` : null,
+        order.restaurantId?._id ? `restaurant_${order.restaurantId._id}` : null,
         `order_${order.orderId}`
-      ];
+      ].filter(Boolean);
 
       emitSocket(io, rooms, 'order_delivery_status_updated', {
         orderId: order.orderId,
@@ -705,13 +761,13 @@ exports.updateOrderStatusByRider = async (req, res, next) => {
         previousStatus,
         riderId: rider._id,
         riderName: rider.name,
-        customerId: order.customerId._id,
-        restaurantId: order.restaurantId._id,
+        customerId: order.customerId?._id,
+        restaurantId: order.restaurantId?._id,
         note,
         timestamp: new Date()
       });
 
-      if (status === 'delivered' && order.paymentMethod === 'cod') {
+      if (status === 'delivered' && order.paymentMethod === 'cod' && order.customerId?._id) {
         io.to(`user_${order.customerId._id}`).emit('payment_update', {
           orderId: order.orderId,
           paymentStatus: 'paid'
@@ -735,9 +791,8 @@ exports.updateOrderStatusByRider = async (req, res, next) => {
 // ✅ Get Current Assigned Orders
 exports.getCurrentOrders = async (req, res, next) => {
   try {
-    const rider = await Rider.findById(req.user._id);
     const currentOrders = await Order.find({
-      riderId: rider._id,
+      riderId: req.user._id,
       status: { $in: ['assigned_to_rider', 'picked_up', 'out_for_delivery', 'arrived_at_location'] }
     })
       .populate('restaurantId', 'name address coordinates')

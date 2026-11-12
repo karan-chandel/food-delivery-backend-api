@@ -21,37 +21,14 @@ const authenticateToken = async (req, res, next) => {
       });
     }
 
-    const candidateSecrets = [
-      JWT_SECRET,
-      "your_super_secure_jwt_secret_key_here",
-      "your_jwt_secret_key",
-      "your_fallback_jwt_secret_key_here",
-    ].filter(Boolean);
-
-    let decoded = null;
-    let lastErr = null;
-    let isExpired = false;
-
-    for (const secret of candidateSecrets) {
-      try {
-        decoded = jwt.verify(token, secret);
-        break;
-      } catch (err) {
-        if (err.name === "TokenExpiredError") {
-          isExpired = true;
-        }
-        lastErr = err;
-      }
+    if (!JWT_SECRET) {
+      return res.status(500).json({
+        success: false,
+        error: "Auth middleware misconfigured: JWT_SECRET missing"
+      });
     }
 
-    if (!decoded) {
-      if (isExpired) {
-        const expErr = new Error("jwt expired");
-        expErr.name = "TokenExpiredError";
-        throw expErr;
-      }
-      throw lastErr;
-    }
+    const decoded = jwt.verify(token, JWT_SECRET);
     // console.log("🔐 Decoded Token - UserID:", decoded.userId, "Role:", decoded.role);
     
     // ✅ CHECK IF IT'S AN ADMIN TOKEN
@@ -176,10 +153,11 @@ const authenticateToken = async (req, res, next) => {
         });
       }
       
-      // ✅ Check verification for riders/restaurants (allow completion/onboarding routes)
+      // ✅ Check verification for riders/restaurants (allow profile viewing & completion/onboarding routes)
       const isCompletionRoute = 
         req.originalUrl.includes('/rider/complete') ||
         req.originalUrl.includes('/rider/auth/complete') ||
+        (req.originalUrl.includes('/rider/profile') && !req.originalUrl.includes('/availability') && !req.originalUrl.includes('/earnings') && !req.originalUrl.includes('/history')) ||
         req.originalUrl.includes('/restaurant/complete') ||
         req.originalUrl.includes('/restaurant/auth/complete') ||
         (req.originalUrl.includes('/restaurants') && req.method === 'POST');

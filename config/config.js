@@ -34,6 +34,7 @@ module.exports = {
   // DEBUG_OTP is true in dev unless explicitly disabled, and false in production unless explicitly enabled
   DEBUG_OTP: (process.env.DEBUG_OTP && ["true", "1"].includes(String(process.env.DEBUG_OTP).toLowerCase().trim())) || (process.env.NODE_ENV !== "production" && process.env.DEBUG_OTP !== "false"),
   CATALOG_SERVICE_URL: process.env.CATALOG_SERVICE_URL || (process.env.NODE_ENV === "production" ? "https://zewito-catalog-service.onrender.com" : "http://localhost:4001"),
+  RIDER_SERVICE_URL: process.env.RIDER_SERVICE_URL || (process.env.NODE_ENV === "production" ? "https://zewito-rider-service.onrender.com" : "http://localhost:5054"),
   LOGISTICS_SERVICE_URL: process.env.LOGISTICS_SERVICE_URL || (process.env.NODE_ENV === "production" ? "https://zewito-logistics-service.onrender.com" : "http://localhost:5051"),
   AUTH_SERVICE_URL: process.env.AUTH_SERVICE_URL || (process.env.NODE_ENV === "production" ? "https://zewito-auth-service.onrender.com" : "http://localhost:5052"),
   ADMIN_SERVICE_URL: process.env.ADMIN_SERVICE_URL || (process.env.NODE_ENV === "production" ? "https://zewito-admin-service.onrender.com" : "http://localhost:5053"),
