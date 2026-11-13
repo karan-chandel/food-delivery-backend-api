@@ -10,6 +10,7 @@ const RestaurantUser = require('../models/RestaurantUser');
 const Order = require('../models/Order');
 const Restaurant = require("../models/Restaurant");
 const Notification = require("../models/Notification");
+const catalogClient = require("../utils/catalogClient");
 const { createNotification, createRestaurantNotifications } = require('../utils/notificationHelper');
 const {
     recordRiderLocation,
@@ -381,6 +382,20 @@ function initializeSocket(server) {
 
                 if (user.role !== 'customer' && !user.isVerified) {
                     return next(new Error(`Your ${user.role} account is pending verification. Please contact admin.`));
+                }
+
+                if (user.role === 'restaurant' && !user.restaurantId) {
+                    try {
+                        const remoteRest = await catalogClient.getRestaurantByOwnerId(user._id);
+                        if (remoteRest?._id) {
+                            user.restaurantId = remoteRest._id;
+                            RestaurantUser.findByIdAndUpdate(user._id, {
+                                $set: { restaurantId: remoteRest._id, ...(remoteRest.name ? { businessName: remoteRest.name } : {}) }
+                            }).catch(() => {});
+                        }
+                    } catch {
+                        // Best-effort fallback; room join falls back to userId
+                    }
                 }
 
                 socket.userId = user._id;

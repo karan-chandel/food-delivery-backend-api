@@ -1,5 +1,6 @@
 const express = require("express");
 const crypto = require("crypto");
+const mongoose = require("mongoose");
 const router = express.Router();
 const { INTERNAL_SERVICE_SECRET } = require("../../config/config");
 const Rider = require("../../models/Rider");
@@ -154,6 +155,159 @@ router.post("/verify-user", async (req, res, next) => {
 
     await Promise.all(updates);
     res.json({ success: true, message: "Verification synced on Core Platform" });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/v1/internal/restaurant-sync
+ * Syncs restaurantId & metadata from zewito-catalog-service when a partner creates/updates a restaurant.
+ */
+router.post("/restaurant-sync", async (req, res, next) => {
+  try {
+    const { userId, ownerId, restaurantId, businessName, name, phone, email, isVerified } = req.body;
+    const partnerId = userId || ownerId;
+
+    if (!partnerId || !restaurantId) {
+      return res.status(400).json({ success: false, error: "userId/ownerId and restaurantId are required" });
+    }
+
+    const updateSet = {
+      restaurantId,
+      ...(businessName ? { businessName } : {}),
+      ...(name ? { name } : {}),
+      ...(email ? { email } : {}),
+      ...(typeof isVerified === "boolean" ? { isVerified } : {}),
+    };
+    const setOnInsert = {
+      role: "restaurant",
+      isActive: true,
+      ...(phone ? { phone } : {}),
+    };
+
+    const restUser = await RestaurantUser.findByIdAndUpdate(
+      partnerId,
+      { $set: updateSet, $setOnInsert: setOnInsert },
+      { new: true, upsert: true }
+    );
+
+    res.json({ success: true, data: restUser });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/v1/internal/restaurants/:restaurantId/analytics
+ * Computes live order & revenue analytics from Order collection for Catalog / Logistics services.
+ */
+router.get("/restaurants/:restaurantId/analytics", async (req, res, next) => {
+  try {
+    const { restaurantId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(restaurantId)) {
+      return res.status(400).json({ success: false, error: "Invalid restaurantId" });
+    }
+
+    const restObjId = new mongoose.Types.ObjectId(restaurantId);
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const [
+      totalOrders,
+      completedOrders,
+      todaysOrders,
+      statusGroups,
+      salesBuckets,
+      popularItemsAgg,
+    ] = await Promise.all([
+      Order.countDocuments({ restaurantId: restObjId }),
+      Order.countDocuments({ restaurantId: restObjId, status: "delivered" }),
+      Order.countDocuments({ restaurantId: restObjId, createdAt: { $gte: startOfToday } }),
+      Order.aggregate([
+        { $match: { restaurantId: restObjId } },
+        { $group: { _id: "$status", count: { $sum: 1 } } },
+      ]),
+      Order.aggregate([
+        { $match: { restaurantId: restObjId, status: "delivered" } },
+        {
+          $addFields: {
+            effectiveDate: { $ifNull: ["$deliveredAt", "$createdAt"] },
+            revenueAmount: { $ifNull: ["$finalAmount", "$subtotal"] },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalSales: { $sum: "$revenueAmount" },
+            todaySales: {
+              $sum: { $cond: [{ $gte: ["$effectiveDate", startOfToday] }, "$revenueAmount", 0] },
+            },
+            weeklySales: {
+              $sum: { $cond: [{ $gte: ["$effectiveDate", startOfWeek] }, "$revenueAmount", 0] },
+            },
+            monthlySales: {
+              $sum: { $cond: [{ $gte: ["$effectiveDate", startOfMonth] }, "$revenueAmount", 0] },
+            },
+          },
+        },
+      ]),
+      Order.aggregate([
+        { $match: { restaurantId: restObjId } },
+        { $unwind: "$items" },
+        {
+          $group: {
+            _id: "$items.menuItemId",
+            name: { $first: "$items.name" },
+            totalQuantity: { $sum: "$items.quantity" },
+            totalRevenue: { $sum: { $ifNull: ["$items.itemTotal", "$items.price"] } },
+          },
+        },
+        { $sort: { totalQuantity: -1 } },
+        { $limit: 5 },
+      ]),
+    ]);
+
+    const ordersByStatus = {
+      pending: 0,
+      confirmed: 0,
+      preparing: 0,
+      ready_for_pickup: 0,
+      assigned_to_rider: 0,
+      picked_up: 0,
+      out_for_delivery: 0,
+      delivered: 0,
+      cancelled: 0,
+    };
+    for (const row of statusGroups) {
+      if (row._id) ordersByStatus[row._id] = row.count;
+    }
+
+    const sales = salesBuckets[0] || {
+      totalSales: 0,
+      todaySales: 0,
+      weeklySales: 0,
+      monthlySales: 0,
+    };
+
+    res.json({
+      success: true,
+      data: {
+        restaurantId,
+        totalOrders,
+        completedOrders,
+        todaysOrders,
+        totalEarnings: Math.round((sales.totalSales || 0) * 100) / 100,
+        totalSales: Math.round((sales.totalSales || 0) * 100) / 100,
+        todaySales: Math.round((sales.todaySales || 0) * 100) / 100,
+        weeklySales: Math.round((sales.weeklySales || 0) * 100) / 100,
+        monthlySales: Math.round((sales.monthlySales || 0) * 100) / 100,
+        ordersByStatus,
+        popularItems: popularItemsAgg,
+      },
+    });
   } catch (err) {
     next(err);
   }

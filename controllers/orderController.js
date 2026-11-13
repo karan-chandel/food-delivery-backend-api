@@ -342,7 +342,7 @@ exports.createOrder = async (req, res, next) => {
   }
 };
 
-// Helper to robustly resolve restaurantId for restaurant role across schemas and JWT
+// Helper to robustly resolve restaurantId for restaurant role across schemas, JWT, and Catalog Service
 async function resolveRestaurantIdForUser(user) {
   if (user.restaurantId) return user.restaurantId.toString();
   const restUser = await RestaurantUser.findById(user._id);
@@ -351,6 +351,16 @@ async function resolveRestaurantIdForUser(user) {
     $or: [{ ownerId: user._id }, { createdBy: user._id }],
   });
   if (restDoc?._id) return restDoc._id.toString();
+
+  // Cross-service fallback: resolve from zewito-catalog-service and cache locally
+  const remoteRest = await catalogClient.getRestaurantByOwnerId(user._id).catch(() => null);
+  if (remoteRest?._id) {
+    RestaurantUser.findByIdAndUpdate(
+      user._id,
+      { $set: { restaurantId: remoteRest._id, ...(remoteRest.name ? { businessName: remoteRest.name } : {}) } }
+    ).catch(() => {});
+    return remoteRest._id.toString();
+  }
   return null;
 }
 
@@ -727,8 +737,8 @@ exports.assignRider = async (req, res, next) => {
     const order = await Order.findOne(getOrderQuery(orderId));
     if (!order) return res.status(404).json({ success: false, error: "Order not found" });
 
-    const restUser = await RestaurantUser.findById(req.user._id);
-    if (!restUser || restUser.restaurantId.toString() !== order.restaurantId.toString())
+    const resolvedResId = await resolveRestaurantIdForUser(req.user);
+    if (!resolvedResId || order.restaurantId.toString() !== resolvedResId)
       return res.status(403).json({ success: false, error: "Not allowed" });
 
     const rider = await Rider.findById(riderId);
@@ -932,6 +942,13 @@ exports.addOrderReview = async (req, res, next) => {
     await order.save();
 
     if (restaurantRating) {
+      catalogClient.syncRestaurantReview(order.restaurantId, {
+        customerId: order.customerId._id || order.customerId,
+        orderId: order.orderId,
+        rating: restaurantRating,
+        review: restaurantReview || "",
+      }).catch(() => {});
+
       const restaurant = await Restaurant.findById(order.restaurantId);
       if (restaurant) {
         restaurant.rating = restaurant.rating || { average: 0, count: 0, reviews: [] };

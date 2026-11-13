@@ -307,7 +307,59 @@ const validateCart = async ({ restaurantId, items, couponCode }) => {
   }
 };
 
+/**
+ * Fetch restaurant document by ownerId via Catalog internal endpoint (fallback to local DB).
+ */
+const getRestaurantByOwnerId = async (ownerId) => {
+  if (!ownerId) return null;
+  const targetUrl = `${CATALOG_SERVICE_URL.replace(/\/+$/, "")}/internal/v1/restaurant/owner/${encodeURIComponent(String(ownerId))}`;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(targetUrl, {
+      method: "GET",
+      headers: {
+        "X-Internal-Secret": INTERNAL_SERVICE_SECRET || "d778a0a96422d9c1203f62e9753cbbb2fb9b175e41295e5a1d02ed0224152595",
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (response.ok) {
+      const json = await response.json();
+      if (json?.success && json?.data) return json.data;
+    }
+  } catch (err) {
+    console.warn(`⚠️ [CatalogClient] getRestaurantByOwnerId skipped (${err.message})`);
+  }
+
+  return Restaurant.findOne({ $or: [{ ownerId }, { createdBy: ownerId }] }).lean();
+};
+
+/**
+ * Sync customer review & rating to zewito-catalog-service so Restaurant Portal reflects live reviews.
+ */
+const syncRestaurantReview = async (restaurantId, reviewPayload) => {
+  if (!restaurantId) return null;
+  const targetUrl = `${CATALOG_SERVICE_URL.replace(/\/+$/, "")}/internal/v1/restaurant/${encodeURIComponent(String(restaurantId))}/review`;
+  try {
+    const { status, data } = await postJson(
+      targetUrl,
+      reviewPayload,
+      {
+        "X-Internal-Secret": INTERNAL_SERVICE_SECRET || "d778a0a96422d9c1203f62e9753cbbb2fb9b175e41295e5a1d02ed0224152595",
+      },
+      5000
+    );
+    return status >= 200 && status < 300 ? data : null;
+  } catch (err) {
+    console.warn(`⚠️ [CatalogClient] Review sync failed for restaurant ${restaurantId}: ${err.message}`);
+    return null;
+  }
+};
+
 module.exports = {
   validateCart,
   localValidateCart,
+  getRestaurantByOwnerId,
+  syncRestaurantReview,
 };

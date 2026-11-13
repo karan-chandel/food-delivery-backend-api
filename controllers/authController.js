@@ -10,6 +10,7 @@ const { JWT_SECRET, DEBUG_OTP } = require("../config/config");
 const { uploadBufferToCloudinary } = require('../middlewares/upload');
 const tokenHelper = require("../utils/tokenHelper");
 const smsService = require("../utils/smsService");
+const catalogClient = require("../utils/catalogClient");
 const fs = require('fs');
 
 // Generate random 6-digit OTP
@@ -578,6 +579,13 @@ exports.rateRestaurant = async (req, res, next) => {
     order.restaurantRating = rating;
     order.restaurantReview = review;
     await order.save();
+
+    catalogClient.syncRestaurantReview(restaurantId, {
+      customerId: userId,
+      orderId,
+      rating,
+      review: review || "",
+    }).catch(() => {});
 
     res.json({
       success: true,
