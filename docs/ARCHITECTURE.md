@@ -147,3 +147,18 @@ To scale the platform to 100,000+ daily active users with 99.99% uptime:
 | **Restaurant Portal**| `/FoodFE/restaurent-portal`| `3001` | Merchant Menu & Order Acceptance UI |
 | **Delivery Hub** | `/FoodFE/delivery-hub` | `3002` | Customer Web Portal |
 | **Rider Portal** | `/FoodFE/rider-portal` | `3003` | Courier & Logistics Dispatch |
+
+---
+
+## 🔄 5. Inter-Service Communication & Data Sync Contracts
+
+| Calling Service | Target Service | Route | Protocol / Auth | Purpose |
+|---|---|---|---|---|
+| **Catalog Service** | `FoodBE` (Core) | `GET /api/v1/internal/restaurants/:restaurantId/analytics` | HTTP (`X-Internal-Secret`) | Aggregates live orders, status counts, and today's/weekly/monthly revenue for restaurant dashboard. |
+| **Catalog Service** | `FoodBE` (Core) | `POST /api/v1/internal/restaurant-sync` | HTTP (`X-Internal-Secret`) | Syncs partner `restaurantId` & business metadata to Core DB on onboarding/resubmission. |
+| **Catalog Service** | `zewito-auth-service` | `POST /api/v1/auth/internal/sync-restaurant` | HTTP (`X-Internal-Secret`) | Links `restaurantId` to `RestaurantUser` in Auth DB. |
+| **FoodBE** (Core) | `zewito-catalog-service` | `POST /internal/v1/restaurant/:restaurantId/review` | HTTP (`X-Internal-Secret`) | Replicates customer order ratings & reviews from Core DB to Catalog DB. |
+| **FoodBE** (Core) | `zewito-catalog-service` | `GET /internal/v1/restaurant/owner/:ownerId` | HTTP (`X-Internal-Secret`) | Resolves outlet metadata & ID by partner owner ID when resolving order permissions. |
+| **Logistics Service** | `zewito-catalog-service` | `GET /internal/v1/restaurant/:restaurantId` | HTTP (`X-Internal-Secret`) | Verifies restaurant ownership, bank account details, and active status for payout settlements. |
+| **Logistics Service** | `FoodBE` (Core) | `GET /api/v1/internal/restaurants/:restaurantId/analytics` | HTTP (`X-Internal-Secret`) | Fetches verified gross sales to compute 15% platform commission and wallet balance. |
+
