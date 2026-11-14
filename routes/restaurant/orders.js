@@ -10,7 +10,12 @@ router.use(requireRole(["restaurant"]));
 router.get("/", orderController.getMyOrders);
 router.get("/my-orders", orderController.getMyOrders);
 router.get("/:orderId", orderController.getOrderById);
-router.patch("/:orderId/status", orderController.updateOrderStatus);
-router.patch("/:orderId/assign-rider", orderController.assignRider);
+router.route("/:orderId/status")
+  .patch(orderController.updateOrderStatus)
+  .put(orderController.updateOrderStatus);
+
+router.route("/:orderId/assign-rider")
+  .patch(orderController.assignRider)
+  .put(orderController.assignRider);
 
 module.exports = router;
