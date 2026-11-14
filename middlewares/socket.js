@@ -380,7 +380,17 @@ function initializeSocket(server) {
                     return next(new Error('User account is deactivated'));
                 }
 
-                if (user.role !== 'customer' && !user.isVerified) {
+                if (decoded.isVerified && !user.isVerified) {
+                    user.isVerified = true;
+                    if (user.role === 'restaurant') {
+                        RestaurantUser.updateOne({ _id: user._id }, { $set: { isVerified: true } }).catch(() => {});
+                    } else if (user.role === 'rider') {
+                        Rider.updateOne({ _id: user._id }, { $set: { isVerified: true } }).catch(() => {});
+                    }
+                }
+
+                const isAccountVerified = Boolean(user.isVerified || decoded.isVerified);
+                if (user.role !== 'customer' && !isAccountVerified) {
                     return next(new Error(`Your ${user.role} account is pending verification. Please contact admin.`));
                 }
 

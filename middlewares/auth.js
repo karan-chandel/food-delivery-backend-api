@@ -153,6 +153,18 @@ const authenticateToken = async (req, res, next) => {
         });
       }
       
+      // Auto-sync verification status from cryptographically verified token if DB is stale
+      if (decoded.isVerified && !user.isVerified) {
+        user.isVerified = true;
+        if (user.role === 'restaurant') {
+          RestaurantUser.updateOne({ _id: user._id }, { $set: { isVerified: true } }).catch(() => {});
+        } else if (user.role === 'rider') {
+          Rider.updateOne({ _id: user._id }, { $set: { isVerified: true } }).catch(() => {});
+        } else {
+          User.updateOne({ _id: user._id }, { $set: { isVerified: true } }).catch(() => {});
+        }
+      }
+
       // ✅ Check verification for riders/restaurants (allow profile viewing & completion/onboarding routes)
       const isCompletionRoute = 
         req.originalUrl.includes('/rider/complete') ||
@@ -162,7 +174,8 @@ const authenticateToken = async (req, res, next) => {
         req.originalUrl.includes('/restaurant/auth/complete') ||
         (req.originalUrl.includes('/restaurants') && req.method === 'POST');
 
-      if (user.role !== 'customer' && !user.isVerified && !isCompletionRoute) {
+      const isAccountVerified = Boolean(user.isVerified || decoded.isVerified);
+      if (user.role !== 'customer' && !isAccountVerified && !isCompletionRoute) {
         return res.status(403).json({ 
           success: false,
           error: `Your ${user.role} account is pending verification. Please contact admin.` 
