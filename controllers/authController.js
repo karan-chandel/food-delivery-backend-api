@@ -683,23 +683,216 @@ exports.rateRider = async (req, res, next) => {
 // ✅ Add Address
 exports.addAddress = async (req, res, next) => {
   try {
-    const addressData = req.body;
-
+    const userId = req.user._id || req.user.userId;
     if (req.user.role !== "customer") {
       return res.status(403).json({ success: false, error: "Only customers can add addresses" });
     }
 
-    let customer = await Customer.findById(req.user._id);
+    const {
+      type = "home",
+      customLabel,
+      flatNumber,
+      addressLine1,
+      addressLine2,
+      landmark,
+      city,
+      state,
+      pincode,
+      latitude,
+      longitude,
+      isDefault,
+      receiverName,
+      receiverPhone,
+      deliveryInstructions,
+    } = req.body;
+
+    if (!addressLine1 || !city || !state || !pincode) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing required fields: addressLine1, city, state, and pincode are required",
+      });
+    }
+
+    let customer = await Customer.findById(userId);
     if (!customer) {
       return res.status(404).json({ success: false, error: "Customer not found" });
     }
 
-    customer.addresses.push(addressData);
+    // Determine if this address should be default:
+    // If it's customer's first address, make it default automatically, or if isDefault is true
+    const shouldBeDefault = customer.addresses.length === 0 ? true : Boolean(isDefault);
+
+    if (shouldBeDefault) {
+      customer.addresses.forEach((addr) => {
+        addr.isDefault = false;
+      });
+    }
+
+    const newAddress = {
+      type: ["home", "work", "other"].includes(type?.toLowerCase()) ? type.toLowerCase() : "other",
+      customLabel: type?.toLowerCase() === "other" ? (customLabel || "").trim() : "",
+      flatNumber: (flatNumber || "").trim(),
+      addressLine1: addressLine1.trim(),
+      addressLine2: (addressLine2 || "").trim(),
+      landmark: (landmark || "").trim(),
+      city: city.trim(),
+      state: state.trim(),
+      pincode: String(pincode).trim(),
+      latitude: latitude ? parseFloat(latitude) : undefined,
+      longitude: longitude ? parseFloat(longitude) : undefined,
+      isDefault: shouldBeDefault,
+      receiverName: (receiverName || "").trim(),
+      receiverPhone: (receiverPhone || "").trim(),
+      deliveryInstructions: (deliveryInstructions || "").trim(),
+    };
+
+    customer.addresses.push(newAddress);
     await customer.save();
+
+    const addedAddress = customer.addresses[customer.addresses.length - 1];
 
     res.status(201).json({
       success: true,
       message: "Address added successfully",
+      addresses: customer.addresses,
+      addedAddress,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ✅ Update Address
+exports.updateAddress = async (req, res, next) => {
+  try {
+    const userId = req.user._id || req.user.userId;
+    const { addressId } = req.params;
+
+    let customer = await Customer.findById(userId);
+    if (!customer) {
+      return res.status(404).json({ success: false, error: "Customer not found" });
+    }
+
+    const address = customer.addresses.id(addressId);
+    if (!address) {
+      return res.status(404).json({ success: false, error: "Address not found" });
+    }
+
+    const {
+      type,
+      customLabel,
+      flatNumber,
+      addressLine1,
+      addressLine2,
+      landmark,
+      city,
+      state,
+      pincode,
+      latitude,
+      longitude,
+      isDefault,
+      receiverName,
+      receiverPhone,
+      deliveryInstructions,
+    } = req.body;
+
+    if (type !== undefined) {
+      address.type = ["home", "work", "other"].includes(type?.toLowerCase()) ? type.toLowerCase() : "other";
+    }
+    if (customLabel !== undefined) address.customLabel = (customLabel || "").trim();
+    if (flatNumber !== undefined) address.flatNumber = (flatNumber || "").trim();
+    if (addressLine1 !== undefined) address.addressLine1 = addressLine1.trim();
+    if (addressLine2 !== undefined) address.addressLine2 = (addressLine2 || "").trim();
+    if (landmark !== undefined) address.landmark = (landmark || "").trim();
+    if (city !== undefined) address.city = city.trim();
+    if (state !== undefined) address.state = state.trim();
+    if (pincode !== undefined) address.pincode = String(pincode).trim();
+    if (latitude !== undefined) address.latitude = latitude ? parseFloat(latitude) : undefined;
+    if (longitude !== undefined) address.longitude = longitude ? parseFloat(longitude) : undefined;
+    if (receiverName !== undefined) address.receiverName = (receiverName || "").trim();
+    if (receiverPhone !== undefined) address.receiverPhone = (receiverPhone || "").trim();
+    if (deliveryInstructions !== undefined) address.deliveryInstructions = (deliveryInstructions || "").trim();
+
+    if (isDefault !== undefined && Boolean(isDefault)) {
+      customer.addresses.forEach((addr) => {
+        addr.isDefault = addr._id.toString() === addressId.toString();
+      });
+    }
+
+    await customer.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Address updated successfully",
+      addresses: customer.addresses,
+      updatedAddress: address,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ✅ Delete Address
+exports.deleteAddress = async (req, res, next) => {
+  try {
+    const userId = req.user._id || req.user.userId;
+    const { addressId } = req.params;
+
+    let customer = await Customer.findById(userId);
+    if (!customer) {
+      return res.status(404).json({ success: false, error: "Customer not found" });
+    }
+
+    const targetIndex = customer.addresses.findIndex((a) => a._id.toString() === addressId.toString());
+    if (targetIndex === -1) {
+      return res.status(404).json({ success: false, error: "Address not found" });
+    }
+
+    const wasDefault = customer.addresses[targetIndex].isDefault;
+    customer.addresses.splice(targetIndex, 1);
+
+    // If deleted address was default and customer has remaining addresses, make the first one default
+    if (wasDefault && customer.addresses.length > 0) {
+      customer.addresses[0].isDefault = true;
+    }
+
+    await customer.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Address deleted successfully",
+      addresses: customer.addresses,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ✅ Set Default Address
+exports.setDefaultAddress = async (req, res, next) => {
+  try {
+    const userId = req.user._id || req.user.userId;
+    const { addressId } = req.params;
+
+    let customer = await Customer.findById(userId);
+    if (!customer) {
+      return res.status(404).json({ success: false, error: "Customer not found" });
+    }
+
+    const exists = customer.addresses.some((a) => a._id.toString() === addressId.toString());
+    if (!exists) {
+      return res.status(404).json({ success: false, error: "Address not found" });
+    }
+
+    customer.addresses.forEach((addr) => {
+      addr.isDefault = addr._id.toString() === addressId.toString();
+    });
+
+    await customer.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Default address updated successfully",
       addresses: customer.addresses,
     });
   } catch (err) {

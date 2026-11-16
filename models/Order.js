@@ -82,12 +82,18 @@ const orderSchema = new mongoose.Schema({
 
   deliveryAddress: {
     type: { type: String, default: 'home' },
+    customLabel: String,
+    flatNumber: String,
     addressLine1: String,
     addressLine2: String,
     city: String,
     state: String,
     pincode: String,
     landmark: String,
+    isDefault: Boolean,
+    receiverName: String,
+    receiverPhone: String,
+    deliveryInstructions: String,
     coordinates: {
       lat: Number,
       lng: Number

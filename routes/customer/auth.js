@@ -20,5 +20,8 @@ router.post("/favorites", auth, requireRole(['customer']), authController.addFav
 router.post("/rate/restaurant", auth, requireRole(['customer']), authController.rateRestaurant);
 router.post("/rate/rider", auth, requireRole(['customer']), authController.rateRider);
 router.post("/address", auth, requireRole(['customer']), authController.addAddress);
+router.put("/address/:addressId", auth, requireRole(['customer']), authController.updateAddress);
+router.delete("/address/:addressId", auth, requireRole(['customer']), authController.deleteAddress);
+router.patch("/address/:addressId/default", auth, requireRole(['customer']), authController.setDefaultAddress);
 
 module.exports = router;

@@ -2,15 +2,21 @@ const mongoose = require('mongoose');
 
 const addressSchema = new mongoose.Schema({
   type: { type: String, enum: ['home', 'work', 'other'], default: 'home' },
+  customLabel: { type: String, default: null }, // e.g. "Gym", "Friend's Place"
+  flatNumber: { type: String, default: "" }, // e.g. "Flat 402, Tower B"
   addressLine1: { type: String, required: true },
-  addressLine2: String,
+  addressLine2: { type: String, default: "" },
   city: { type: String, required: true },
   state: { type: String, required: true },
   pincode: { type: String, required: true },
-  landmark: String,
-  latitude: Number,
-  longitude: Number
-});
+  landmark: { type: String, default: "" },
+  latitude: { type: Number },
+  longitude: { type: Number },
+  isDefault: { type: Boolean, default: false },
+  receiverName: { type: String, default: null },
+  receiverPhone: { type: String, default: null },
+  deliveryInstructions: { type: String, default: null }
+}, { _id: true, timestamps: true });
 
 const customerSchema = new mongoose.Schema({
   name: { type: String, required: true },
