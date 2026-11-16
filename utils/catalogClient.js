@@ -345,9 +345,14 @@ const validateCart = async ({ restaurantId, items, couponCode }) => {
 /**
  * Fetch restaurant document by ownerId via Catalog internal endpoint (fallback to local DB).
  */
-const getRestaurantByOwnerId = async (ownerId) => {
-  if (!ownerId) return null;
-  const targetUrl = `${CATALOG_SERVICE_URL.replace(/\/+$/, "")}/internal/v1/restaurant/owner/${encodeURIComponent(String(ownerId))}`;
+const getRestaurantByOwnerId = async (ownerId, phone, name) => {
+  if (!ownerId && !phone) return null;
+  const params = new URLSearchParams();
+  if (phone) params.set("phone", String(phone).trim());
+  if (name) params.set("name", String(name).trim());
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  const lookupKey = ownerId || phone;
+  const targetUrl = `${CATALOG_SERVICE_URL.replace(/\/+$/, "")}/internal/v1/restaurant/owner/${encodeURIComponent(String(lookupKey))}${qs}`;
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -367,7 +372,17 @@ const getRestaurantByOwnerId = async (ownerId) => {
     console.warn(`⚠️ [CatalogClient] getRestaurantByOwnerId skipped (${err.message})`);
   }
 
-  return Restaurant.findOne({ $or: [{ ownerId }, { createdBy: ownerId }] }).lean();
+  const cleanPhone = phone ? String(phone).replace(/^\+91/, '').trim() : null;
+  return Restaurant.findOne({
+    $or: [
+      ...(ownerId ? [{ ownerId }, { createdBy: ownerId }] : []),
+      ...(phone ? [
+        { "contact.phone": phone },
+        { "contact.phone": cleanPhone },
+        { "contact.phone": `+91${cleanPhone}` }
+      ] : []),
+    ],
+  }).lean();
 };
 
 /**

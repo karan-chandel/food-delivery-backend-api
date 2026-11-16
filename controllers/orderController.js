@@ -353,13 +353,31 @@ async function resolveRestaurantIdForUser(user) {
   if (user.restaurantId) return user.restaurantId.toString();
   const restUser = await RestaurantUser.findById(user._id);
   if (restUser?.restaurantId) return restUser.restaurantId.toString();
+  
   const restDoc = await Restaurant.findOne({
     $or: [{ ownerId: user._id }, { createdBy: user._id }],
   });
   if (restDoc?._id) return restDoc._id.toString();
 
-  // Cross-service fallback: resolve from zewito-catalog-service and cache locally
-  const remoteRest = await catalogClient.getRestaurantByOwnerId(user._id).catch(() => null);
+  // Local phone matching fallback
+  if (user.phone) {
+    const rawPhone = String(user.phone).trim();
+    const cleanPhone = rawPhone.replace(/^\+91/, '').trim();
+    const phoneRest = await Restaurant.findOne({
+      $or: [
+        { "contact.phone": rawPhone },
+        { "contact.phone": cleanPhone },
+        { "contact.phone": `+91${cleanPhone}` },
+      ],
+    });
+    if (phoneRest?._id) {
+      RestaurantUser.findByIdAndUpdate(user._id, { $set: { restaurantId: phoneRest._id } }).catch(() => {});
+      return phoneRest._id.toString();
+    }
+  }
+
+  // Cross-service fallback: resolve from zewito-catalog-service (by ownerId, phone, or name) and cache locally
+  const remoteRest = await catalogClient.getRestaurantByOwnerId(user._id, user.phone, user.businessName || user.name).catch(() => null);
   if (remoteRest?._id) {
     RestaurantUser.findByIdAndUpdate(
       user._id,
