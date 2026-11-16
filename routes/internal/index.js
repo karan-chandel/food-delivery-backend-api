@@ -7,6 +7,7 @@ const Rider = require("../../models/Rider");
 const Order = require("../../models/Order");
 const User = require("../../models/User");
 const RestaurantUser = require("../../models/RestaurantUser");
+const Restaurant = require("../../models/Restaurant");
 
 function safeEqual(a, b) {
   if (!a || !b || typeof a !== "string" || typeof b !== "string") return false;
@@ -163,36 +164,107 @@ router.post("/verify-user", async (req, res, next) => {
 /**
  * POST /api/v1/internal/restaurant-sync
  * Syncs restaurantId & metadata from zewito-catalog-service when a partner creates/updates a restaurant.
+ * Upserts both RestaurantUser and Restaurant stub projection so that Mongoose .populate('restaurantId')
+ * in Order and Rider controllers succeeds cleanly without returning null.
  */
 router.post("/restaurant-sync", async (req, res, next) => {
   try {
-    const { userId, ownerId, restaurantId, businessName, name, phone, email, isVerified } = req.body;
+    const {
+      userId,
+      ownerId,
+      restaurantId,
+      businessName,
+      name,
+      phone,
+      email,
+      isVerified,
+      address,
+      coordinates,
+      geolocation,
+      cuisine,
+      images,
+      isOpen,
+      isActive,
+      deliveryTime,
+      minOrderAmount,
+      deliveryFee,
+    } = req.body;
     const partnerId = userId || ownerId;
 
-    if (!partnerId || !restaurantId) {
-      return res.status(400).json({ success: false, error: "userId/ownerId and restaurantId are required" });
+    if (!partnerId && !restaurantId) {
+      return res.status(400).json({ success: false, error: "userId/ownerId or restaurantId is required" });
     }
 
-    const updateSet = {
-      restaurantId,
-      ...(businessName ? { businessName } : {}),
-      ...(name ? { name } : {}),
-      ...(email ? { email } : {}),
-      ...(typeof isVerified === "boolean" ? { isVerified } : {}),
-    };
-    const setOnInsert = {
-      role: "restaurant",
-      isActive: true,
-      ...(phone ? { phone } : {}),
-    };
+    const restName = businessName || name || "Restaurant";
+    const restPhone = phone || "";
+    const restAddress = address || {};
+    const restLat = coordinates?.lat || geolocation?.latitude || restAddress?.geolocation?.latitude;
+    const restLng = coordinates?.lng || geolocation?.longitude || restAddress?.geolocation?.longitude;
 
-    const restUser = await RestaurantUser.findByIdAndUpdate(
-      partnerId,
-      { $set: updateSet, $setOnInsert: setOnInsert },
-      { new: true, upsert: true }
-    );
+    let restUser = null;
+    if (partnerId) {
+      const updateSet = {
+        ...(restaurantId ? { restaurantId } : {}),
+        ...(businessName ? { businessName } : {}),
+        ...(name ? { name } : {}),
+        ...(email ? { email } : {}),
+        ...(typeof isVerified === "boolean" ? { isVerified } : {}),
+      };
+      const setOnInsert = {
+        role: "restaurant",
+        isActive: true,
+        ...(phone ? { phone } : {}),
+      };
 
-    res.json({ success: true, data: restUser });
+      restUser = await RestaurantUser.findByIdAndUpdate(
+        partnerId,
+        { $set: updateSet, $setOnInsert: setOnInsert },
+        { new: true, upsert: true }
+      );
+    }
+
+    let restDoc = null;
+    if (restaurantId && mongoose.Types.ObjectId.isValid(restaurantId)) {
+      const restUpdate = {
+        name: restName,
+        ...(phone ? { "contact.phone": String(phone).trim() } : {}),
+        ...(email ? { "contact.email": String(email).trim() } : {}),
+        ...(Array.isArray(cuisine) && cuisine.length > 0 ? { cuisine } : {}),
+        ...(Array.isArray(images) && images.length > 0 ? { images } : {}),
+        ...(typeof isOpen === "boolean" ? { isOpen } : {}),
+        ...(typeof isActive === "boolean" ? { isActive } : {}),
+        ...(restAddress.addressLine1 ? { "address.addressLine1": restAddress.addressLine1 } : {}),
+        ...(restAddress.city ? { "address.city": restAddress.city } : {}),
+        ...(restAddress.state ? { "address.state": restAddress.state } : {}),
+        ...(restAddress.pincode ? { "address.pincode": restAddress.pincode } : {}),
+        ...(restLat !== undefined && restLng !== undefined
+          ? {
+              "address.geolocation.latitude": Number(restLat),
+              "address.geolocation.longitude": Number(restLng),
+              coordinates: { lat: Number(restLat), lng: Number(restLng) },
+            }
+          : {}),
+      };
+
+      const restOnInsert = {
+        isActive: true,
+        isOpen: true,
+        "address.addressLine1": restAddress.addressLine1 || "Main Road",
+        "address.city": restAddress.city || "Fatehabad",
+        "address.state": restAddress.state || "Haryana",
+        "address.pincode": restAddress.pincode || "125050",
+        "contact.phone": restPhone || "9999999999",
+        ...(partnerId ? { ownerId: partnerId, createdBy: partnerId } : {}),
+      };
+
+      restDoc = await Restaurant.findByIdAndUpdate(
+        restaurantId,
+        { $set: restUpdate, $setOnInsert: restOnInsert },
+        { upsert: true, new: true, runValidators: false }
+      );
+    }
+
+    res.json({ success: true, data: { user: restUser, restaurant: restDoc } });
   } catch (err) {
     next(err);
   }

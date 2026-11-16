@@ -767,8 +767,9 @@ exports.updateOrderStatusByRider = async (req, res, next) => {
         timestamp: new Date()
       });
 
-      if (status === 'delivered' && order.paymentMethod === 'cod' && order.customerId?._id) {
-        io.to(`user_${order.customerId._id}`).emit('payment_update', {
+      const custPaymentId = (order.customerId?._id || order.customerId)?.toString();
+      if (status === 'delivered' && order.paymentMethod === 'cod' && custPaymentId) {
+        io.to(`user_${custPaymentId}`).emit('payment_update', {
           orderId: order.orderId,
           paymentStatus: 'paid'
         });
@@ -799,9 +800,29 @@ exports.getCurrentOrders = async (req, res, next) => {
       .populate('customerId', 'name phone deliveryAddress')
       .sort({ 'deliveryInfo.assignedAt': -1 });
 
+    const sanitizedCurrent = currentOrders.map((d) => {
+      const obj = d.toObject();
+      if (!obj.restaurantId) {
+        obj.restaurantId = {
+          _id: d.get ? d.get("restaurantId") : d.restaurantId,
+          name: obj.route?.restaurantLocation?.address || "Restaurant",
+          address: { addressLine1: obj.route?.restaurantLocation?.address || "" },
+          coordinates: obj.route?.restaurantLocation ? { lat: obj.route.restaurantLocation.lat, lng: obj.route.restaurantLocation.lng } : null,
+        };
+      }
+      if (!obj.customerId) {
+        obj.customerId = {
+          _id: d.get ? d.get("customerId") : d.customerId,
+          name: "Customer",
+          phone: "",
+        };
+      }
+      return obj;
+    });
+
     res.json({
       success: true,
-      data: currentOrders
+      data: sanitizedCurrent
     });
   } catch (error) {
     next(error);
@@ -868,9 +889,28 @@ exports.getRiderHistory = async (req, res, next) => {
 
     const total = await Order.countDocuments(filter);
 
+    const sanitizedDeliveries = deliveries.map((d) => {
+      const obj = d.toObject();
+      if (!obj.restaurantId) {
+        obj.restaurantId = {
+          _id: d.get ? d.get("restaurantId") : d.restaurantId,
+          name: obj.route?.restaurantLocation?.address || "Restaurant",
+          address: { addressLine1: obj.route?.restaurantLocation?.address || "" },
+        };
+      }
+      if (!obj.customerId) {
+        obj.customerId = {
+          _id: d.get ? d.get("customerId") : d.customerId,
+          name: "Customer",
+          phone: "",
+        };
+      }
+      return obj;
+    });
+
     res.json({
       success: true,
-      data: deliveries,
+      data: sanitizedDeliveries,
       pagination: {
         currentPage: parseInt(page),
         totalPages: Math.ceil(total / limit),

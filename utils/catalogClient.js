@@ -83,8 +83,43 @@ const postJson = async (urlStr, payload, headers = {}, timeoutMs = 25000) => {
 const localValidateCart = async ({ restaurantId, items, couponCode }) => {
   console.warn("⚠️ [CatalogClient] Using LOCAL DB fallback for cart validation");
 
-  const restaurant = await Restaurant.findById(restaurantId);
-  if (!restaurant || !restaurant.isActive) {
+  let restaurant = await Restaurant.findById(restaurantId);
+  if (!restaurant) {
+    // Attempt JIT fallback fetch from Catalog Service
+    try {
+      const targetUrl = `${CATALOG_SERVICE_URL.replace(/\/+$/, "")}/internal/v1/restaurant/${encodeURIComponent(String(restaurantId))}`;
+      const res = await fetch(targetUrl, {
+        headers: {
+          "X-Internal-Secret": INTERNAL_SERVICE_SECRET || "d778a0a96422d9c1203f62e9753cbbb2fb9b175e41295e5a1d02ed0224152595",
+        },
+        signal: AbortSignal.timeout(4000),
+      });
+      if (res.ok) {
+        const body = await res.json();
+        if (body?.data) {
+          restaurant = body.data;
+          // Cache stub in local DB for future lookups & populates
+          Restaurant.findByIdAndUpdate(
+            restaurantId,
+            {
+              $set: {
+                name: restaurant.name || "Restaurant",
+                ...(restaurant.contact ? { contact: restaurant.contact } : {}),
+                ...(restaurant.address ? { address: restaurant.address } : {}),
+                isActive: true,
+                isOpen: typeof restaurant.isOpen === "boolean" ? restaurant.isOpen : true,
+              },
+            },
+            { upsert: true, runValidators: false }
+          ).catch(() => {});
+        }
+      }
+    } catch (e) {
+      // Continue to next check
+    }
+  }
+
+  if (restaurant && restaurant.isActive === false) {
     return {
       success: true,
       isValid: false,
@@ -93,7 +128,7 @@ const localValidateCart = async ({ restaurantId, items, couponCode }) => {
     };
   }
 
-  if (!restaurant.isOpen) {
+  if (restaurant && restaurant.isOpen === false) {
     return {
       success: true,
       isValid: false,
@@ -357,9 +392,36 @@ const syncRestaurantReview = async (restaurantId, reviewPayload) => {
   }
 };
 
+/**
+ * Retrieve user's active cart directly from Catalog Service via internal endpoint
+ */
+const getUserCart = async (userId) => {
+  if (!userId) return null;
+  const targetUrl = `${CATALOG_SERVICE_URL.replace(/\/+$/, "")}/internal/v1/cart/user/${encodeURIComponent(String(userId))}`;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    const response = await fetch(targetUrl, {
+      method: "GET",
+      headers: {
+        "X-Internal-Secret": INTERNAL_SERVICE_SECRET || "d778a0a96422d9c1203f62e9753cbbb2fb9b175e41295e5a1d02ed0224152595",
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!response.ok) return null;
+    const body = await response.json();
+    return body?.data || null;
+  } catch (err) {
+    console.warn(`⚠️ [CatalogClient] Failed to fetch cart for user ${userId}: ${err.message}`);
+    return null;
+  }
+};
+
 module.exports = {
   validateCart,
   localValidateCart,
   getRestaurantByOwnerId,
   syncRestaurantReview,
+  getUserCart,
 };

@@ -115,10 +115,16 @@ exports.createOrder = async (req, res, next) => {
       paymentMethod = "cod";
     }
 
-    const cart = await Cart.findOne({ userId: req.user._id });
+    let cart = await Cart.findOne({ userId: req.user._id });
+    if ((!cart || !cart.items || cart.items.length === 0) && catalogClient.getUserCart) {
+      const remoteCart = await catalogClient.getUserCart(req.user._id).catch(() => null);
+      if (remoteCart && Array.isArray(remoteCart.items) && remoteCart.items.length > 0) {
+        cart = remoteCart;
+      }
+    }
 
     if (!items || items.length === 0) {
-      if (!cart || cart.items.length === 0) {
+      if (!cart || !cart.items || cart.items.length === 0) {
         return res.status(400).json({
           success: false,
           error: "Cart is empty. Please add items to cart or provide items array.",
@@ -126,7 +132,7 @@ exports.createOrder = async (req, res, next) => {
       }
 
       items = cart.items.map((item) => ({
-        menuItemId: item.menuItemId,
+        menuItemId: item.menuItemId?._id || item.menuItemId || item.itemId || item._id,
         quantity: item.quantity,
         price: item.price,
         variant: item.variant,
@@ -359,6 +365,28 @@ async function resolveRestaurantIdForUser(user) {
       user._id,
       { $set: { restaurantId: remoteRest._id, ...(remoteRest.name ? { businessName: remoteRest.name } : {}) } }
     ).catch(() => {});
+
+    // Self-healing JIT projection: cache Restaurant stub locally so future .populate() works
+    Restaurant.findByIdAndUpdate(
+      remoteRest._id,
+      {
+        $set: {
+          name: remoteRest.name || "Restaurant",
+          ...(remoteRest.contact ? { contact: remoteRest.contact } : {}),
+          ...(remoteRest.address ? { address: remoteRest.address } : {}),
+          ...(remoteRest.images ? { images: remoteRest.images } : {}),
+          ...(remoteRest.cuisine ? { cuisine: remoteRest.cuisine } : {}),
+          isOpen: typeof remoteRest.isOpen === "boolean" ? remoteRest.isOpen : true,
+          isActive: typeof remoteRest.isActive === "boolean" ? remoteRest.isActive : true,
+        },
+        $setOnInsert: {
+          ownerId: user._id,
+          createdBy: user._id,
+        },
+      },
+      { upsert: true, runValidators: false }
+    ).catch(() => {});
+
     return remoteRest._id.toString();
   }
   return null;
@@ -392,6 +420,28 @@ exports.getMyOrders = async (req, res, next) => {
 
     const ordersWithRoute = orders.map(order => {
       const orderObj = order.toObject();
+
+      // Defensive fallbacks for cross-database populated fields
+      if (!orderObj.restaurantId) {
+        const rawResId = order.get ? order.get("restaurantId") : order.restaurantId;
+        orderObj.restaurantId = {
+          _id: rawResId,
+          name: orderObj.route?.restaurantLocation?.address || "Restaurant",
+          address: { addressLine1: orderObj.route?.restaurantLocation?.address || "" },
+          images: [],
+          contact: {},
+        };
+      }
+
+      if (!orderObj.customerId) {
+        const rawCustId = order.get ? order.get("customerId") : order.customerId;
+        orderObj.customerId = {
+          _id: rawCustId,
+          name: "Customer",
+          phone: "",
+        };
+      }
+
       const route = buildRoute(orderObj);
       if (route) {
         orderObj.route = route;
@@ -438,17 +488,22 @@ exports.getOrderById = async (req, res, next) => {
 
     if (!order) return res.status(404).json({ success: false, error: "Order not found" });
 
-    if (req.user.role === 'customer' && order.customerId._id.toString() !== req.user._id.toString())
-      return res.status(403).json({ success: false, error: "Not authorized" });
+    if (req.user.role === 'customer') {
+      const orderCustId = (order.customerId?._id || order.customerId)?.toString();
+      if (!orderCustId || orderCustId !== req.user._id.toString())
+        return res.status(403).json({ success: false, error: "Not authorized" });
+    }
 
     if (req.user.role === 'restaurant') {
       const resolvedResId = await resolveRestaurantIdForUser(req.user);
-      if (!resolvedResId || order.restaurantId._id.toString() !== resolvedResId)
+      const orderResId = (order.restaurantId?._id || order.restaurantId)?.toString();
+      if (!resolvedResId || !orderResId || orderResId !== resolvedResId)
         return res.status(403).json({ success: false, error: "Not authorized" });
     }
 
     if (req.user.role === 'rider') {
-      if (!order.riderId || order.riderId._id.toString() !== req.user._id.toString())
+      const orderRiderId = (order.riderId?._id || order.riderId)?.toString();
+      if (!orderRiderId || orderRiderId !== req.user._id.toString())
         return res.status(403).json({ success: false, error: "Not authorized" });
     }
 
@@ -500,13 +555,15 @@ exports.updateOrderStatus = async (req, res, next) => {
 
     if (req.user.role === 'restaurant') {
       const resolvedResId = await resolveRestaurantIdForUser(req.user);
-      if (!resolvedResId || order.restaurantId._id.toString() !== resolvedResId) {
+      const orderResId = (order.restaurantId?._id || order.restaurantId)?.toString();
+      if (!resolvedResId || !orderResId || orderResId !== resolvedResId) {
         return res.status(403).json({ success: false, error: "Not allowed" });
       }
     }
 
     if (req.user.role === 'rider') {
-      if (!order.riderId || order.riderId._id.toString() !== req.user._id.toString()) {
+      const orderRiderId = (order.riderId?._id || order.riderId)?.toString();
+      if (!orderRiderId || orderRiderId !== req.user._id.toString()) {
         return res.status(403).json({ success: false, error: "Not allowed" });
       }
     }
@@ -582,12 +639,16 @@ exports.updateOrderStatus = async (req, res, next) => {
 
       console.log("📡 EMITTING GLOBAL STATUS EVENT:", payload);
 
-      io.to(`order_${updatedOrder.orderId}`).emit("order_status_changed", payload);
-      io.to(`user_${updatedOrder.customerId._id}`).emit("order_status_changed", payload);
-      io.to(`restaurant_${updatedOrder.restaurantId._id}`).emit("order_status_changed", payload);
+      const custRoomId = (updatedOrder.customerId?._id || updatedOrder.customerId)?.toString();
+      const restRoomId = (updatedOrder.restaurantId?._id || updatedOrder.restaurantId)?.toString();
+      const riderRoomId = updatedOrder.riderId ? (updatedOrder.riderId?._id || updatedOrder.riderId)?.toString() : null;
 
-      if (updatedOrder.riderId) {
-        io.to(`rider_${updatedOrder.riderId._id}`).emit("order_status_changed", payload);
+      io.to(`order_${updatedOrder.orderId}`).emit("order_status_changed", payload);
+      if (custRoomId) io.to(`user_${custRoomId}`).emit("order_status_changed", payload);
+      if (restRoomId) io.to(`restaurant_${restRoomId}`).emit("order_status_changed", payload);
+
+      if (riderRoomId) {
+        io.to(`rider_${riderRoomId}`).emit("order_status_changed", payload);
       }
 
       if (status === 'ready_for_pickup') {
@@ -597,13 +658,15 @@ exports.updateOrderStatus = async (req, res, next) => {
 
       if (status === 'delivered') {
         io.to(`order_${updatedOrder.orderId}`).emit("order_status_changed", payload);
-        io.to(`user_${updatedOrder.customerId._id}`).emit("order_status_changed", payload);
+        if (custRoomId) {
+          io.to(`user_${custRoomId}`).emit("order_status_changed", payload);
 
-        if (updatedOrder.paymentMethod === 'cod') {
-          io.to(`user_${updatedOrder.customerId._id}`).emit("ui_payment_update", {
-            orderId: updatedOrder.orderId,
-            paymentStatus: "paid"
-          });
+          if (updatedOrder.paymentMethod === 'cod') {
+            io.to(`user_${custRoomId}`).emit("ui_payment_update", {
+              orderId: updatedOrder.orderId,
+              paymentStatus: "paid"
+            });
+          }
         }
       }
     }
@@ -662,7 +725,8 @@ exports.cancelOrder = async (req, res, next) => {
 
     if (!order) return res.status(404).json({ success: false, error: "Order not found" });
 
-    if (order.customerId._id.toString() !== req.user._id.toString())
+    const custId = (order.customerId?._id || order.customerId)?.toString();
+    if (!custId || custId !== req.user._id.toString())
       return res.status(403).json({ success: false, error: "Not allowed" });
 
     const nonCancellable = ['out_for_delivery', 'delivered', 'cancelled'];
@@ -821,17 +885,24 @@ exports.trackOrder = async (req, res, next) => {
 
     if (!order) return res.status(404).json({ success: false, error: "Order not found" });
 
-    if (req.user.role === 'customer' && order.customerId._id.toString() !== req.user._id.toString())
-      return res.status(403).json({ success: false, error: "Not authorized" });
-
-    if (req.user.role === 'restaurant') {
-      const resolvedResId = await resolveRestaurantIdForUser(req.user);
-      if (!resolvedResId || order.restaurantId._id.toString() !== resolvedResId)
+    if (req.user.role === 'customer') {
+      const orderCustId = (order.customerId?._id || order.customerId)?.toString();
+      if (!orderCustId || orderCustId !== req.user._id.toString())
         return res.status(403).json({ success: false, error: "Not authorized" });
     }
 
-    if (req.user.role === 'rider' && (!order.riderId || order.riderId._id.toString() !== req.user._id.toString()))
-      return res.status(403).json({ success: false, error: "Not authorized" });
+    if (req.user.role === 'restaurant') {
+      const resolvedResId = await resolveRestaurantIdForUser(req.user);
+      const orderResId = (order.restaurantId?._id || order.restaurantId)?.toString();
+      if (!resolvedResId || !orderResId || orderResId !== resolvedResId)
+        return res.status(403).json({ success: false, error: "Not authorized" });
+    }
+
+    if (req.user.role === 'rider') {
+      const orderRiderId = (order.riderId?._id || order.riderId)?.toString();
+      if (!orderRiderId || orderRiderId !== req.user._id.toString())
+        return res.status(403).json({ success: false, error: "Not authorized" });
+    }
 
     const orderObj = order.toObject();
     const route = buildRoute(orderObj);
@@ -923,7 +994,8 @@ exports.addOrderReview = async (req, res, next) => {
     const order = await Order.findOne(getOrderQuery(orderId)).populate('customerId');
     if (!order) return res.status(404).json({ success: false, error: "Order not found" });
 
-    if (order.customerId._id.toString() !== req.user._id.toString())
+    const custId = (order.customerId?._id || order.customerId)?.toString();
+    if (!custId || custId !== req.user._id.toString())
       return res.status(403).json({ success: false, error: "Not authorized" });
 
     if (order.status !== 'delivered')
