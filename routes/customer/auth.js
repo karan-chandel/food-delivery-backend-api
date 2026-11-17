@@ -15,6 +15,8 @@ router.post("/logout", authController.logout);
 
 router.get("/profile", auth, requireRole(['customer']), authController.getProfile);
 router.put("/profile", auth, requireRole(['customer']), authController.updateProfile);
+router.get("/address", auth, requireRole(['customer']), authController.getAddresses);
+router.get("/addresses", auth, requireRole(['customer']), authController.getAddresses);
 
 router.post("/favorites", auth, requireRole(['customer']), authController.addFavorite);
 router.post("/rate/restaurant", auth, requireRole(['customer']), authController.rateRestaurant);

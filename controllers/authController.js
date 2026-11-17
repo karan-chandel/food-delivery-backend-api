@@ -912,6 +912,34 @@ exports.setDefaultAddress = async (req, res, next) => {
   }
 };
 
+// ✅ Get Saved Addresses
+exports.getAddresses = async (req, res, next) => {
+  try {
+    const userId = req.user._id || req.user.userId;
+    let customer = await Customer.findById(userId);
+    if (!customer && req.user.phone) {
+      customer = await Customer.findOne({ phone: req.user.phone });
+    }
+    if (!customer) {
+      const user = await User.findById(userId);
+      if (user && user.addresses) {
+        return res.status(200).json({
+          success: true,
+          addresses: user.addresses,
+        });
+      }
+      return res.status(404).json({ success: false, error: "Customer not found" });
+    }
+
+    res.status(200).json({
+      success: true,
+      addresses: customer.addresses || [],
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // ✅ Complete Rider Registration
 exports.completeRider = async (req, res, next) => {
   try {
