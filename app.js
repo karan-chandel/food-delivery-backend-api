@@ -130,6 +130,10 @@ app.use(`/api/${API_VERSION}/notifications`, require('./routes/customer/notifica
 // ==================== STANDALONE AUTH COMPATIBILITY LAYER ====================
 // Note: When calling through API Gateway, /api/v1/auth is routed directly to zewito-auth-service (Port 5052).
 app.use(`/api/${API_VERSION}/auth`, require('./routes/customer/auth'));
+app.use(`/api/${API_VERSION}/customer`, require('./routes/customer/auth'));
+app.use(`/api/customer`, require('./routes/customer/auth'));
+app.use(`/api/${API_VERSION}/user`, require('./routes/customer/auth'));
+app.use(`/api/user`, require('./routes/customer/auth'));
 app.use(`/api/${API_VERSION}/auth`, require('./routes/rider/auth'));
 app.use(`/api/${API_VERSION}/auth`, require('./routes/restaurant/auth'));
 app.use(`/api/${API_VERSION}/auth/restaurant`, require('./routes/restaurant/auth'));

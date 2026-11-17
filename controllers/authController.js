@@ -346,10 +346,23 @@ exports.verifyOtp = async (req, res, next) => {
 // ✅ Get Profile
 exports.getProfile = async (req, res, next) => {
   try {
-    const userId = req.user._id;
-    const baseUser = await User.findById(userId);
+    const userId = req.user._id || req.user.id || req.user.userId;
+    const role = req.user.role || 'customer';
 
-    if (!baseUser) {
+    let userDoc = await User.findById(userId);
+
+    // If not found in legacy User collection, find directly from role-specific collection
+    if (!userDoc) {
+      if (role === 'customer') {
+        userDoc = await Customer.findById(userId);
+      } else if (role === 'rider') {
+        userDoc = await Rider.findById(userId);
+      } else if (role === 'restaurant') {
+        userDoc = await RestaurantUser.findById(userId);
+      }
+    }
+
+    if (!userDoc) {
       return res.status(404).json({
         success: false,
         error: "User not found"
@@ -357,21 +370,21 @@ exports.getProfile = async (req, res, next) => {
     }
 
     let userResponse = {
-      id: baseUser._id,
-      name: baseUser.name,
-      phone: baseUser.phone,
-      email: baseUser.email,
-      profilePicture: baseUser.profilePicture,
-      role: baseUser.role,
-      isVerified: baseUser.isVerified,
-      isActive: baseUser.isActive,
-      createdAt: baseUser.createdAt,
-      lastLogin: baseUser.lastLogin,
-      addresses: []
+      id: userDoc._id,
+      name: userDoc.name,
+      phone: userDoc.phone,
+      email: userDoc.email,
+      profilePicture: userDoc.profilePicture,
+      role: userDoc.role || role,
+      isVerified: userDoc.isVerified,
+      isActive: userDoc.isActive,
+      createdAt: userDoc.createdAt,
+      lastLogin: userDoc.lastLogin,
+      addresses: userDoc.addresses || []
     };
 
-    if (baseUser.role === 'customer') {
-      const customer = await Customer.findById(userId);
+    if (role === 'customer' || userDoc.role === 'customer') {
+      const customer = userDoc.addresses !== undefined ? userDoc : await Customer.findById(userId);
       if (customer) {
         userResponse.addresses = customer.addresses || [];
         userResponse.favorites = customer.favorites || [];
@@ -380,7 +393,7 @@ exports.getProfile = async (req, res, next) => {
         userResponse.totalOrders = customer.totalOrders || 0;
         userResponse.totalSpent = customer.totalSpent || 0;
       }
-    } else if (baseUser.role === 'rider') {
+    } else if (role === 'rider' || userDoc.role === 'rider') {
       const rider = await Rider.findById(userId);
       if (rider) {
         userResponse.vehicleNo = rider.vehicleNo;
@@ -389,10 +402,10 @@ exports.getProfile = async (req, res, next) => {
         userResponse.licenseNumber = rider.licenseNumber;
         userResponse.currentLocation = rider.currentLocation;
         userResponse.totalDeliveries = rider.totalDeliveries || 0;
-        userResponse.rating = rider.rating;
+        userResponse.rating = rider.averageRating || rider.rating;
         userResponse.earnings = rider.earnings || 0;
       }
-    } else if (baseUser.role === 'restaurant') {
+    } else if (role === 'restaurant' || userDoc.role === 'restaurant') {
       const restaurantUser = await RestaurantUser.findById(userId);
       if (restaurantUser) {
         userResponse.restaurantId = restaurantUser.restaurantId;
@@ -415,61 +428,55 @@ exports.getProfile = async (req, res, next) => {
 // ✅ Update Profile
 exports.updateProfile = async (req, res, next) => {
   try {
-    const { name, email, profilePicture, ...roleSpecificData } = req.body;
+    const userId = req.user._id || req.user.id || req.user.userId;
+    const role = req.user.role || 'customer';
+    const { name, email, profilePicture, addresses, ...roleSpecificData } = req.body;
 
     const updateData = {};
-    if (name) updateData.name = name;
-    if (email) updateData.email = email;
-    if (profilePicture) updateData.profilePicture = profilePicture;
+    if (name) updateData.name = name.trim();
+    if (email) updateData.email = email.trim();
+    if (profilePicture !== undefined) updateData.profilePicture = profilePicture;
+    if (Array.isArray(addresses)) updateData.addresses = addresses;
 
-    const baseUser = await User.findByIdAndUpdate(
-      req.user._id,
-      updateData,
-      { new: true }
-    );
+    let updatedUser = null;
 
-    if (!baseUser) {
+    if (role === 'customer') {
+      updatedUser = await Customer.findByIdAndUpdate(userId, updateData, { new: true });
+      User.findByIdAndUpdate(userId, updateData).catch(() => {});
+    } else if (role === 'rider') {
+      const riderUpdate = { ...updateData };
+      if (roleSpecificData.hasOwnProperty('isAvailable')) {
+        riderUpdate.isAvailable = roleSpecificData.isAvailable;
+      }
+      updatedUser = await Rider.findByIdAndUpdate(userId, riderUpdate, { new: true });
+      User.findByIdAndUpdate(userId, updateData).catch(() => {});
+    } else if (role === 'restaurant') {
+      updatedUser = await RestaurantUser.findByIdAndUpdate(userId, updateData, { new: true });
+      User.findByIdAndUpdate(userId, updateData).catch(() => {});
+    }
+
+    if (!updatedUser) {
+      updatedUser = await User.findByIdAndUpdate(userId, updateData, { new: true });
+    }
+
+    if (!updatedUser) {
       return res.status(404).json({
         success: false,
         error: "User not found"
       });
     }
 
-    let roleSpecificUser;
-    if (baseUser.role === 'customer') {
-      roleSpecificUser = await Customer.findByIdAndUpdate(
-        req.user._id,
-        updateData,
-        { new: true }
-      );
-    } else if (baseUser.role === 'rider') {
-      const riderUpdate = { ...updateData };
-      if (roleSpecificData.hasOwnProperty('isAvailable')) {
-        riderUpdate.isAvailable = roleSpecificData.isAvailable;
-      }
-      roleSpecificUser = await Rider.findByIdAndUpdate(
-        req.user._id,
-        riderUpdate,
-        { new: true }
-      );
-    } else if (baseUser.role === 'restaurant') {
-      roleSpecificUser = await RestaurantUser.findByIdAndUpdate(
-        req.user._id,
-        updateData,
-        { new: true }
-      );
-    }
-
     res.json({
       success: true,
       message: "Profile updated successfully",
       user: {
-        id: baseUser._id,
-        name: baseUser.name,
-        phone: baseUser.phone,
-        email: baseUser.email,
-        profilePicture: baseUser.profilePicture,
-        role: baseUser.role
+        id: updatedUser._id,
+        name: updatedUser.name,
+        phone: updatedUser.phone,
+        email: updatedUser.email,
+        profilePicture: updatedUser.profilePicture,
+        role: updatedUser.role || role,
+        addresses: updatedUser.addresses || []
       }
     });
   } catch (err) {
