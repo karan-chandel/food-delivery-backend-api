@@ -140,7 +140,7 @@ app.use(`/api/${API_VERSION}/register`, require('./routes/restaurant/auth'));
 // ==================== DECOUPLED SERVICES (ADMIN / CATALOG / LOGISTICS) ====================
 // 🛡️ Admin & Support domain (/admin, /super-admin, /tickets, /contact-us) -> zewito-admin-service (Port 5053)
 const forwardToAdminService = (req, res) => {
-  const baseUrl = (ADMIN_SERVICE_URL || 'http://localhost:5053').replace(/\/+$/, '');
+  const baseUrl = (ADMIN_SERVICE_URL || 'https://zewito-admin-service.onrender.com').replace(/\/+$/, '');
   const targetUrl = `${baseUrl}${req.originalUrl}`;
   res.redirect(307, targetUrl);
 };

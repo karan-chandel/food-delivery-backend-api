@@ -72,16 +72,23 @@ function buildRoute(orderObj) {
 
   let custLat, custLng, custAddress;
 
-  if (orderObj.deliveryAddress.coordinates) {
-    custLat = orderObj.deliveryAddress.coordinates.lat;
-    custLng = orderObj.deliveryAddress.coordinates.lng;
-  } else if (orderObj.customerId?.addresses && orderObj.customerId.addresses.length > 0) {
-    const primaryAddress = orderObj.customerId.addresses[0];
+  if (orderObj.deliveryAddress?.coordinates) {
+    custLat = orderObj.deliveryAddress.coordinates.lat ?? orderObj.deliveryAddress.coordinates.latitude;
+    custLng = orderObj.deliveryAddress.coordinates.lng ?? orderObj.deliveryAddress.coordinates.longitude;
+  }
+  if (custLat === undefined && orderObj.deliveryAddress?.latitude !== undefined) {
+    custLat = orderObj.deliveryAddress.latitude;
+    custLng = orderObj.deliveryAddress.longitude;
+  }
+  if (custLat === undefined && orderObj.customerId?.addresses && orderObj.customerId.addresses.length > 0) {
+    const primaryAddress = orderObj.customerId.addresses.find((a) => a.isDefault) || orderObj.customerId.addresses[0];
     custLat = primaryAddress.latitude;
     custLng = primaryAddress.longitude;
   }
 
-  custAddress = `${orderObj.deliveryAddress.addressLine1}, ${orderObj.deliveryAddress.city}`;
+  const addrLine = orderObj.deliveryAddress?.addressLine1 || '';
+  const cityStr = orderObj.deliveryAddress?.city || '';
+  custAddress = `${addrLine}${addrLine && cityStr ? ', ' : ''}${cityStr}` || 'Customer Location';
 
   return {
     restaurantLocation: {
@@ -102,7 +109,30 @@ function buildRoute(orderObj) {
 // ✅ Create Order (Decoupled via Catalog Microservice - TSK-104)
 exports.createOrder = async (req, res, next) => {
   try {
-    let { restaurantId, items, deliveryAddress, paymentMethod, specialInstructions } = req.body;
+    let {
+      restaurantId,
+      items,
+      deliveryAddress,
+      paymentMethod,
+      specialInstructions,
+      addressId,
+      deliveryAddressId,
+      transactionId,
+      paymentId,
+      paymentDetails,
+    } = req.body;
+
+    // 🛡️ Resolve deliveryAddress if passed as an ID (common in mobile/Flutter apps)
+    if (!deliveryAddress && (addressId || deliveryAddressId)) {
+      deliveryAddress = addressId || deliveryAddressId;
+    }
+    if (typeof deliveryAddress === "string" && mongoose.Types.ObjectId.isValid(deliveryAddress)) {
+      const customerDoc = await Customer.findById(req.user._id);
+      const matchedAddr = customerDoc?.addresses?.id(deliveryAddress);
+      if (matchedAddr) {
+        deliveryAddress = matchedAddr.toObject();
+      }
+    }
 
     if (!restaurantId || !deliveryAddress || !paymentMethod) {
       return res.status(400).json({
@@ -111,8 +141,19 @@ exports.createOrder = async (req, res, next) => {
       });
     }
 
+    if (!mongoose.Types.ObjectId.isValid(restaurantId)) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid restaurantId format",
+      });
+    }
+
+    // 🛡️ Normalise paymentMethod (case-insensitivity e.g. COD, Online, Razorpay)
+    paymentMethod = String(paymentMethod).trim().toLowerCase();
     if (paymentMethod === "cash_on_delivery" || paymentMethod === "cash") {
       paymentMethod = "cod";
+    } else if (paymentMethod === "razorpay") {
+      paymentMethod = "online";
     }
 
     let cart = await Cart.findOne({ userId: req.user._id });
@@ -210,6 +251,33 @@ exports.createOrder = async (req, res, next) => {
     const deliveryTime = Number(restaurantSnapshot.deliveryTime) || 30;
     const estimatedDelivery = new Date(Date.now() + deliveryTime * 60000);
 
+    // 🛡️ Robust coordinate resolution for client payload (supports lat/lng, latitude/longitude, or top-level)
+    const rawCustLat =
+      deliveryAddress.coordinates?.lat ??
+      deliveryAddress.coordinates?.latitude ??
+      deliveryAddress.latitude;
+    const rawCustLng =
+      deliveryAddress.coordinates?.lng ??
+      deliveryAddress.coordinates?.longitude ??
+      deliveryAddress.longitude;
+
+    const parsedCustLat =
+      rawCustLat !== undefined && rawCustLat !== null && !isNaN(Number(rawCustLat))
+        ? Number(rawCustLat)
+        : 0;
+    const parsedCustLng =
+      rawCustLng !== undefined && rawCustLng !== null && !isNaN(Number(rawCustLng))
+        ? Number(rawCustLng)
+        : 0;
+
+    const normalizedDeliveryAddress = {
+      ...deliveryAddress,
+      coordinates: {
+        lat: parsedCustLat,
+        lng: parsedCustLng,
+      },
+    };
+
     const route = {
       restaurantLocation: {
         lat: restAddress.geolocation?.latitude || restAddress.coordinates?.lat || 0,
@@ -217,8 +285,8 @@ exports.createOrder = async (req, res, next) => {
         address: restAddress.addressLine1 || `${restaurantSnapshot.nameSnapshot || ""}, ${restAddress.city || ""}`,
       },
       customerLocation: {
-        lat: deliveryAddress.coordinates?.lat || deliveryAddress.latitude,
-        lng: deliveryAddress.coordinates?.lng || deliveryAddress.longitude,
+        lat: parsedCustLat,
+        lng: parsedCustLng,
         address: `${deliveryAddress.addressLine1}, ${deliveryAddress.city || ""}`,
       },
       polyline: "",
@@ -241,16 +309,12 @@ exports.createOrder = async (req, res, next) => {
       finalAmount,
       coupon: appliedCoupon,
       idempotencyKey,
-      deliveryAddress: {
-        ...deliveryAddress,
-        coordinates: deliveryAddress.coordinates || {
-          lat: deliveryAddress.latitude,
-          lng: deliveryAddress.longitude,
-        },
-      },
+      deliveryAddress: normalizedDeliveryAddress,
       route,
       paymentMethod,
-      paymentStatus: paymentMethod === "cod" ? "pending" : "paid",
+      paymentStatus: paymentMethod === "cod" ? "pending" : (req.body.paymentStatus || "paid"),
+      transactionId: transactionId || paymentId || undefined,
+      paymentDetails: paymentDetails || undefined,
       specialInstructions,
       status: "pending",
       estimatedDelivery,
@@ -328,10 +392,17 @@ exports.createOrder = async (req, res, next) => {
       });
     }
 
+    const orderData = populatedOrder ? populatedOrder.toObject() : order.toObject();
+    orderData.deliveryProgress = 10;
+    const builtRoute = buildRoute(orderData);
+    if (builtRoute) {
+      orderData.route = builtRoute;
+    }
+
     res.status(201).json({
       success: true,
       message: `Order placed successfully at ${restaurantDisplayName}`,
-      data: populatedOrder,
+      data: orderData,
       summary: {
         subtotal,
         deliveryFee,
@@ -632,6 +703,19 @@ exports.updateOrderStatus = async (req, res, next) => {
 
     await order.save();
 
+    // 🛵 Sync rider status when order reaches terminal state (delivered or cancelled)
+    if (order.riderId && (status === 'delivered' || status === 'cancelled')) {
+      const riderMongoId = (order.riderId?._id || order.riderId);
+      await Rider.findByIdAndUpdate(riderMongoId, {
+        $set: { isAvailable: true, currentOrder: null },
+        $inc: {
+          totalDeliveries: 1,
+          completedDeliveries: status === 'delivered' ? 1 : 0,
+          cancelledDeliveries: status === 'cancelled' ? 1 : 0
+        }
+      }).catch(err => console.error("Error updating rider status on order complete/cancel:", err));
+    }
+
     const updatedOrder = await Order.findById(order._id)
       .populate('customerId', 'name phone addresses')
       .populate('restaurantId', 'name address contact images coordinates')
@@ -761,7 +845,14 @@ exports.cancelOrder = async (req, res, next) => {
 
     await order.save();
 
-    const io = req.app.get('io');
+    // 🛵 Release assigned rider if order is cancelled
+    if (order.riderId) {
+      const riderMongoId = (order.riderId?._id || order.riderId);
+      await Rider.findByIdAndUpdate(riderMongoId, {
+        $set: { isAvailable: true, currentOrder: null },
+        $inc: { cancelledDeliveries: 1 }
+      }).catch(err => console.error("Error releasing rider on order cancellation:", err));
+    }
     if (io) {
       emitSocket(io, [
         `restaurant_${order.restaurantId.toString()}`,
@@ -816,6 +907,10 @@ exports.assignRider = async (req, res, next) => {
     const { orderId } = req.params;
     const { riderId } = req.body;
 
+    if (!riderId || !mongoose.Types.ObjectId.isValid(riderId)) {
+      return res.status(400).json({ success: false, error: "Valid riderId is required" });
+    }
+
     const order = await Order.findOne(getOrderQuery(orderId));
     if (!order) return res.status(404).json({ success: false, error: "Order not found" });
 
@@ -823,9 +918,26 @@ exports.assignRider = async (req, res, next) => {
     if (!resolvedResId || order.restaurantId.toString() !== resolvedResId)
       return res.status(403).json({ success: false, error: "Not allowed" });
 
-    const rider = await Rider.findById(riderId);
-    if (!rider || !rider.isAvailable)
-      return res.status(400).json({ success: false, error: "Rider not available" });
+    if (['delivered', 'cancelled'].includes(order.status)) {
+      return res.status(400).json({ success: false, error: "Cannot assign rider to a delivered or cancelled order" });
+    }
+
+    // Atomically claim rider availability to prevent double-assignment race conditions
+    const rider = await Rider.findOneAndUpdate(
+      { _id: riderId, isAvailable: true },
+      { $set: { isAvailable: false, currentOrder: order._id } },
+      { new: true }
+    );
+    if (!rider) {
+      return res.status(400).json({ success: false, error: "Rider not available or currently on another delivery" });
+    }
+
+    // Free previously assigned rider if reassigned
+    if (order.riderId && order.riderId.toString() !== riderId.toString()) {
+      await Rider.findByIdAndUpdate(order.riderId, {
+        $set: { isAvailable: true, currentOrder: null }
+      }).catch(() => {});
+    }
 
     order.riderId = riderId;
     order.status = 'assigned_to_rider';
@@ -842,16 +954,39 @@ exports.assignRider = async (req, res, next) => {
 
     const io = req.app.get('io');
     if (io) {
+      const payload = {
+        orderId: order.orderId,
+        orderMongoId: order._id,
+        status: 'assigned_to_rider',
+        deliveryProgress: calculateDeliveryProgress('assigned_to_rider'),
+        rider: {
+          id: rider._id,
+          name: rider.name,
+          phone: rider.phone,
+          vehicleType: rider.vehicleType,
+          vehicleNo: rider.vehicleNo
+        },
+        customerId: order.customerId,
+        restaurantId: order.restaurantId,
+        timestamp: new Date()
+      };
+
+      io.to(`order_${order.orderId}`).emit('order_status_changed', payload);
+      io.to(`user_${order.customerId}`).emit('order_status_changed', payload);
+      io.to(`restaurant_${order.restaurantId}`).emit('order_status_changed', payload);
+      io.to(`rider_${riderId}`).emit('order_status_changed', payload);
+
       emitSocket(io,
         [`rider_${riderId}`, `user_${order.customerId}`],
         'ui_order_status_update',
-        {
-          orderId: order._id,
-          riderId,
-          status: 'assigned_to_rider',
-          deliveryProgress: calculateDeliveryProgress('assigned_to_rider')
-        }
+        payload
       );
+
+      io.to('riders_room').emit('order_accepted', {
+        orderId: order.orderId,
+        acceptedBy: rider.name,
+        timestamp: new Date()
+      });
     }
 
     await createNotification({

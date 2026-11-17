@@ -102,13 +102,20 @@ const orderSchema = new mongoose.Schema({
 
   paymentMethod: {
     type: String,
-    enum: ['cod', 'cash_on_delivery', 'online', 'upi', 'card'],
+    enum: ['cod', 'cash_on_delivery', 'online', 'upi', 'card', 'razorpay', 'wallet'],
     default: 'cod'
   },
   paymentStatus: {
     type: String,
     enum: ['pending', 'paid', 'failed', 'refunded'],
     default: 'pending'
+  },
+  transactionId: {
+    type: String,
+    trim: true,
+  },
+  paymentDetails: {
+    type: Object,
   },
 
   // Enhanced status with delivery stages
