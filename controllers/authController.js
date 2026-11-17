@@ -215,6 +215,7 @@ exports.verifyOtp = async (req, res, next) => {
         if (!roleSpecificUser) {
           roleSpecificUser = await Customer.create({
             ...profileData,
+            isVerified: true,
             favorites: [],
             orders: [],
             loyaltyPoints: 0,
@@ -222,7 +223,11 @@ exports.verifyOtp = async (req, res, next) => {
             totalSpent: 0
           });
         } else {
-          roleSpecificUser = await Customer.findByIdAndUpdate(roleSpecificUser._id, { lastLogin: new Date() }, { new: true });
+          roleSpecificUser = await Customer.findByIdAndUpdate(
+            roleSpecificUser._id,
+            { lastLogin: new Date(), isVerified: true },
+            { new: true }
+          );
         }
         break;
 

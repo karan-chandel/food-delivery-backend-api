@@ -321,7 +321,17 @@ exports.createOrder = async (req, res, next) => {
       statusHistory: [{ status: "pending", timestamp: new Date(), updatedBy: req.user._id }],
     });
 
-    // ── 7. Clear User Cart ───────────────────────────────────────────────────
+    // ── 7. Update Customer Schema with Order Reference & Spending Metrics ────
+    await Customer.findByIdAndUpdate(req.user._id, {
+      $push: { orders: order._id },
+      $inc: {
+        totalOrders: 1,
+        totalSpent: finalAmount,
+        loyaltyPoints: Math.floor(finalAmount / 100) * 10,
+      },
+    }).catch((err) => console.warn("Customer schema order update warning:", err.message));
+
+    // ── 8. Clear User Cart ───────────────────────────────────────────────────
     await Cart.findOneAndUpdate(
       { userId: req.user._id },
       { items: [], totalAmount: 0, finalAmount: 0, restaurantId: null, coupon: null }
@@ -1247,6 +1257,20 @@ exports.addOrderReview = async (req, res, next) => {
         priority: 'medium'
       });
     }
+
+    // 🛡️ Sync review into Customer Schema
+    await Customer.findByIdAndUpdate(req.user._id, {
+      $push: {
+        reviews: {
+          orderId: order.orderId,
+          restaurantId: order.restaurantId,
+          riderId: order.riderId,
+          rating: restaurantRating || riderRating || 5,
+          review: restaurantReview || riderReview || "",
+          createdAt: new Date(),
+        },
+      },
+    }).catch(() => {});
 
     res.json({
       success: true,
