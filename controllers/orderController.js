@@ -127,10 +127,36 @@ exports.createOrder = async (req, res, next) => {
       deliveryAddress = addressId || deliveryAddressId;
     }
     if (typeof deliveryAddress === "string" && mongoose.Types.ObjectId.isValid(deliveryAddress)) {
-      const customerDoc = await Customer.findById(req.user._id);
-      const matchedAddr = customerDoc?.addresses?.id(deliveryAddress);
+      let customerDoc = await Customer.findById(req.user._id);
+      let matchedAddr = customerDoc?.addresses?.id(deliveryAddress);
+
+      // 🛡️ Cross-DB Fallback: If address not yet in core food-delivery DB, fetch from Auth Service
+      if (!matchedAddr) {
+        try {
+          const authUrl = `${(process.env.AUTH_SERVICE_URL || "https://zewito-auth-service.onrender.com").replace(/\/+$/, "")}/api/v1/auth/address`;
+          const authRes = await fetch(authUrl, {
+            headers: {
+              Authorization: req.headers.authorization,
+              "X-Internal-Secret": process.env.INTERNAL_SERVICE_SECRET || "d778a0a96422d9c1203f62e9753cbbb2fb9b175e41295e5a1d02ed0224152595",
+            },
+            signal: AbortSignal.timeout(4000),
+          });
+          if (authRes.ok) {
+            const authData = await authRes.json();
+            if (Array.isArray(authData?.addresses)) {
+              matchedAddr = authData.addresses.find((a) => String(a._id) === String(deliveryAddress));
+              if (matchedAddr && customerDoc) {
+                Customer.findByIdAndUpdate(req.user._id, { $addToSet: { addresses: matchedAddr } }).catch(() => {});
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("[OrderController] Cross-service address resolution notice:", e.message);
+        }
+      }
+
       if (matchedAddr) {
-        deliveryAddress = matchedAddr.toObject();
+        deliveryAddress = matchedAddr.toObject ? matchedAddr.toObject() : matchedAddr;
       }
     }
 
@@ -864,14 +890,24 @@ exports.cancelOrder = async (req, res, next) => {
       }).catch(err => console.error("Error releasing rider on order cancellation:", err));
     }
     if (io) {
-      emitSocket(io, [
-        `restaurant_${order.restaurantId.toString()}`,
-        ...(order.riderId ? [`rider_${order.riderId.toString()}`] : [])
-      ], 'order_status_update', {
-        orderId: order._id,
+      const cancelPayload = {
+        orderId: order.orderId,
+        _id: order._id,
         status: 'cancelled',
-        deliveryProgress: 0
-      });
+        deliveryProgress: 0,
+        timestamp: new Date()
+      };
+
+      const cancelRooms = [
+        `order_${order.orderId}`,
+        `user_${(order.customerId?._id || order.customerId)?.toString()}`,
+        `restaurant_${(order.restaurantId?._id || order.restaurantId)?.toString()}`,
+        ...(order.riderId ? [`rider_${(order.riderId?._id || order.riderId)?.toString()}`] : [])
+      ];
+
+      // Emit global order_status_changed so customer tracking screen updates instantly
+      emitSocket(io, cancelRooms, 'order_status_changed', cancelPayload);
+      emitSocket(io, cancelRooms, 'order_status_update', cancelPayload);
     }
 
     await createRestaurantNotifications(order.restaurantId, {
@@ -1117,16 +1153,26 @@ exports.updateRiderLocation = async (req, res, next) => {
 
     const io = req.app.get('io');
     if (io) {
-      emitSocket(io,
-        [`user_${order.customerId}`, `restaurant_${order.restaurantId}`],
-        'rider_location_update',
-        {
-          orderId: order.orderId,
-          location: { lat, lng, address },
-          riderId: req.user._id,
-          timestamp: new Date()
-        }
-      );
+      const locationPayload = {
+        orderId: order.orderId,
+        riderId: req.user._id,
+        currentLocation: { lat, lng, address },
+        lat,
+        lng,
+        address,
+        location: { lat, lng, address },
+        timestamp: new Date()
+      };
+
+      const rooms = [
+        `order_${order.orderId}`,
+        `user_${order.customerId}`,
+        `restaurant_${order.restaurantId}`
+      ];
+
+      // Broadcast to customer live map tracking room
+      emitSocket(io, rooms, 'rider_location_changed', locationPayload);
+      emitSocket(io, rooms, 'rider_location_update', locationPayload);
     }
 
     await createNotification({
