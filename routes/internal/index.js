@@ -385,5 +385,41 @@ router.get("/restaurants/:restaurantId/analytics", async (req, res, next) => {
   }
 });
 
+/**
+ * 🔄 POST /api/v1/internal/sync-customer
+ * Called by zewito-auth-service when customer profile/name is updated or registered
+ */
+router.post("/sync-customer", async (req, res, next) => {
+  try {
+    const { userId, name, phone, email, profilePicture, addresses } = req.body;
+    if (!userId && !phone) {
+      return res.status(400).json({ success: false, error: "userId or phone is required" });
+    }
+
+    const updateFields = {};
+    if (name) updateFields.name = name.trim();
+    if (phone) updateFields.phone = phone.trim();
+    if (email) updateFields.email = email.trim();
+    if (profilePicture !== undefined) updateFields.profilePicture = profilePicture;
+    if (Array.isArray(addresses)) updateFields.addresses = addresses;
+
+    let customer = null;
+    if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+      customer = await Customer.findByIdAndUpdate(userId, { $set: updateFields }, { new: true, upsert: true });
+    } else if (phone) {
+      customer = await Customer.findOneAndUpdate({ phone }, { $set: updateFields }, { new: true, upsert: true });
+    }
+
+    if (userId && User) {
+      User.findByIdAndUpdate(userId, { $set: updateFields }).catch(() => {});
+    }
+
+    console.log(`✅ [Internal Sync] Customer profile synchronized: ${name || phone} (${userId})`);
+    res.status(200).json({ success: true, message: "Customer profile synced successfully in Core Platform", customer });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;
 

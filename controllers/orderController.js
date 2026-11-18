@@ -325,6 +325,28 @@ exports.createOrder = async (req, res, next) => {
       req.body?.idempotencyKey ||
       undefined;
 
+    // 🛡️ Resolve Customer Real Name & Auto-Heal food-delivery.customers
+    const resolvedCustName =
+      (req.body.customerName && !req.body.customerName.startsWith("User_") ? req.body.customerName.trim() : null) ||
+      (deliveryAddress.receiverName && !deliveryAddress.receiverName.startsWith("User_") ? deliveryAddress.receiverName.trim() : null) ||
+      (deliveryAddress.name && !deliveryAddress.name.startsWith("User_") ? deliveryAddress.name.trim() : null) ||
+      (req.user.name && !req.user.name.startsWith("User_") ? req.user.name.trim() : null);
+
+    if (resolvedCustName) {
+      Customer.findByIdAndUpdate(req.user._id, {
+        $set: { name: resolvedCustName },
+      }).catch(() => {});
+    }
+
+    // 🛡️ Block Payment Spoofing: Client-sent 'paid' is strictly rejected for online orders without verified gateway transaction
+    let resolvedPaymentStatus = "pending";
+    if (paymentMethod === "cod" || paymentMethod === "cash_on_delivery") {
+      resolvedPaymentStatus = "pending";
+    } else {
+      // Online payment remains pending until webhook / gateway capture
+      resolvedPaymentStatus = (transactionId || paymentId) ? "pending" : "pending";
+    }
+
     const order = await Order.create({
       customerId: req.user._id,
       restaurantId,
@@ -338,7 +360,7 @@ exports.createOrder = async (req, res, next) => {
       deliveryAddress: normalizedDeliveryAddress,
       route,
       paymentMethod,
-      paymentStatus: paymentMethod === "cod" ? "pending" : (req.body.paymentStatus || "paid"),
+      paymentStatus: resolvedPaymentStatus,
       transactionId: transactionId || paymentId || undefined,
       paymentDetails: paymentDetails || undefined,
       specialInstructions,
@@ -357,11 +379,16 @@ exports.createOrder = async (req, res, next) => {
       },
     }).catch((err) => console.warn("Customer schema order update warning:", err.message));
 
-    // ── 8. Clear User Cart ───────────────────────────────────────────────────
+    // ── 8. Clear User Cart (Local Core Platform + Distributed Catalog Service) ──
     await Cart.findOneAndUpdate(
       { userId: req.user._id },
       { items: [], totalAmount: 0, finalAmount: 0, restaurantId: null, coupon: null }
     );
+    if (catalogClient.clearUserCart) {
+      catalogClient.clearUserCart(req.user._id).catch((err) =>
+        console.warn("[OrderController] Distributed Catalog clearCart notice:", err.message)
+      );
+    }
 
     const populatedOrder = await Order.findById(order._id)
       .populate("customerId", "name phone")
@@ -372,17 +399,38 @@ exports.createOrder = async (req, res, next) => {
     // ── 8. Real-time Socket Dispatch ────────────────────────────────────────
     const io = req.app.get("io");
     if (io) {
+      const customerDisplayName =
+        resolvedCustName ||
+        populatedOrder?.customerId?.name ||
+        deliveryAddress.receiverName ||
+        deliveryAddress.name ||
+        "Customer";
+
       const socketPayload = {
         orderId: order.orderId,
+        _id: order._id,
         status: order.status,
         restaurantId: order.restaurantId,
-        customerId: order.customerId,
+        customerId: {
+          _id: req.user._id,
+          name: customerDisplayName,
+          phone: req.user.phone || populatedOrder?.customerId?.phone || deliveryAddress.receiverPhone || "",
+        },
+        customerName: customerDisplayName,
+        customerPhone: req.user.phone || populatedOrder?.customerId?.phone || deliveryAddress.receiverPhone || "",
+        deliveryAddress: normalizedDeliveryAddress,
+        items: orderItems,
         finalAmount: order.finalAmount,
+        paymentStatus: order.paymentStatus,
+        paymentMethod: order.paymentMethod,
         timestamp: new Date(),
       };
 
+      // Emit BOTH order:new and new_order_received (for Restaurant Portal & KDS live alert)
       io.to(`restaurant_${restaurantId}`).emit("order:new", socketPayload);
+      io.to(`restaurant_${restaurantId}`).emit("new_order_received", socketPayload);
       io.to("admins_room").emit("order:new", socketPayload);
+      io.to("admins_room").emit("new_order_received", socketPayload);
     }
 
     // ── 9. Notifications ────────────────────────────────────────────────────
@@ -558,13 +606,22 @@ exports.getMyOrders = async (req, res, next) => {
         };
       }
 
+      const deliveryReceiver =
+        orderObj.deliveryAddress?.receiverName ||
+        orderObj.deliveryAddress?.name;
+
       if (!orderObj.customerId) {
         const rawCustId = order.get ? order.get("customerId") : order.customerId;
         orderObj.customerId = {
           _id: rawCustId,
-          name: "Customer",
-          phone: "",
+          name: (deliveryReceiver && !deliveryReceiver.startsWith("User_")) ? deliveryReceiver : "Customer",
+          phone: orderObj.deliveryAddress?.receiverPhone || "",
         };
+      } else if (!orderObj.customerId.name || orderObj.customerId.name.startsWith("User_")) {
+        // 🛡️ Auto-Heal: Replace placeholder User_xxxx with customer's real name from deliveryAddress
+        if (deliveryReceiver && !deliveryReceiver.startsWith("User_")) {
+          orderObj.customerId.name = deliveryReceiver;
+        }
       }
 
       const route = buildRoute(orderObj);
@@ -581,7 +638,24 @@ exports.getMyOrders = async (req, res, next) => {
         };
       }
 
-      orderObj.deliveryProgress = calculateDeliveryProgress(orderObj.status);
+      // 🛡️ Auto-Heal: Replace placeholder User_xxxx with customer's real name from deliveryAddress
+    const singleDeliveryReceiver =
+      orderObj.deliveryAddress?.receiverName ||
+      orderObj.deliveryAddress?.name;
+
+    if (!orderObj.customerId) {
+      orderObj.customerId = {
+        _id: order.customerId,
+        name: (singleDeliveryReceiver && !singleDeliveryReceiver.startsWith("User_")) ? singleDeliveryReceiver : "Customer",
+        phone: orderObj.deliveryAddress?.receiverPhone || "",
+      };
+    } else if (!orderObj.customerId.name || orderObj.customerId.name.startsWith("User_")) {
+      if (singleDeliveryReceiver && !singleDeliveryReceiver.startsWith("User_")) {
+        orderObj.customerId.name = singleDeliveryReceiver;
+      }
+    }
+
+    orderObj.deliveryProgress = calculateDeliveryProgress(orderObj.status);
       return orderObj;
     });
 
@@ -645,6 +719,23 @@ exports.getOrderById = async (req, res, next) => {
         address: orderObj.riderLocation.address,
         updatedAt: orderObj.riderLocation.updatedAt
       };
+    }
+
+    // 🛡️ Auto-Heal: Replace placeholder User_xxxx with customer's real name from deliveryAddress
+    const singleDeliveryReceiver =
+      orderObj.deliveryAddress?.receiverName ||
+      orderObj.deliveryAddress?.name;
+
+    if (!orderObj.customerId) {
+      orderObj.customerId = {
+        _id: order.customerId,
+        name: (singleDeliveryReceiver && !singleDeliveryReceiver.startsWith("User_")) ? singleDeliveryReceiver : "Customer",
+        phone: orderObj.deliveryAddress?.receiverPhone || "",
+      };
+    } else if (!orderObj.customerId.name || orderObj.customerId.name.startsWith("User_")) {
+      if (singleDeliveryReceiver && !singleDeliveryReceiver.startsWith("User_")) {
+        orderObj.customerId.name = singleDeliveryReceiver;
+      }
     }
 
     orderObj.deliveryProgress = calculateDeliveryProgress(orderObj.status);
@@ -759,6 +850,23 @@ exports.updateOrderStatus = async (req, res, next) => {
       .populate('items.menuItemId', 'name images category');
 
     const orderObj = updatedOrder.toObject();
+    // 🛡️ Auto-Heal: Replace placeholder User_xxxx with customer's real name from deliveryAddress
+    const singleDeliveryReceiver =
+      orderObj.deliveryAddress?.receiverName ||
+      orderObj.deliveryAddress?.name;
+
+    if (!orderObj.customerId) {
+      orderObj.customerId = {
+        _id: order.customerId,
+        name: (singleDeliveryReceiver && !singleDeliveryReceiver.startsWith("User_")) ? singleDeliveryReceiver : "Customer",
+        phone: orderObj.deliveryAddress?.receiverPhone || "",
+      };
+    } else if (!orderObj.customerId.name || orderObj.customerId.name.startsWith("User_")) {
+      if (singleDeliveryReceiver && !singleDeliveryReceiver.startsWith("User_")) {
+        orderObj.customerId.name = singleDeliveryReceiver;
+      }
+    }
+
     orderObj.deliveryProgress = calculateDeliveryProgress(orderObj.status);
 
     const io = req.app.get('io');
@@ -1116,6 +1224,23 @@ exports.trackOrder = async (req, res, next) => {
         address: orderObj.riderLocation.address,
         updatedAt: orderObj.riderLocation.updatedAt
       };
+    }
+
+    // 🛡️ Auto-Heal: Replace placeholder User_xxxx with customer's real name from deliveryAddress
+    const singleDeliveryReceiver =
+      orderObj.deliveryAddress?.receiverName ||
+      orderObj.deliveryAddress?.name;
+
+    if (!orderObj.customerId) {
+      orderObj.customerId = {
+        _id: order.customerId,
+        name: (singleDeliveryReceiver && !singleDeliveryReceiver.startsWith("User_")) ? singleDeliveryReceiver : "Customer",
+        phone: orderObj.deliveryAddress?.receiverPhone || "",
+      };
+    } else if (!orderObj.customerId.name || orderObj.customerId.name.startsWith("User_")) {
+      if (singleDeliveryReceiver && !singleDeliveryReceiver.startsWith("User_")) {
+        orderObj.customerId.name = singleDeliveryReceiver;
+      }
     }
 
     orderObj.deliveryProgress = calculateDeliveryProgress(orderObj.status);

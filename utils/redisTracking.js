@@ -298,11 +298,19 @@ function setupTrackingSubscriber(io) {
     if (channel === "zewito:tracking:events" && io) {
       try {
         const payload = JSON.parse(message);
-        if (payload.event === "rider_location_changed" && payload.orderId) {
+        const orderId = payload.orderId;
+        if (!orderId) return;
+
+        const targetRooms = [`order_${orderId}`];
+        if (payload.customerId) targetRooms.push(`user_${payload.customerId}`);
+        if (payload.restaurantId) targetRooms.push(`restaurant_${payload.restaurantId}`);
+
+        // 🏍️ Cross-Service Geoping Broadcast (from Logistics or Rider Service)
+        if (payload.event === "rider_location_changed" || payload.event === "rider_location_update" || payload.lat !== undefined) {
           const lat = parseFloat(payload.lat);
           const lng = parseFloat(payload.lng);
           const fullPayload = {
-            orderId: payload.orderId,
+            orderId: orderId,
             riderId: payload.riderId,
             riderName: payload.riderName || "Delivery Partner",
             lat,
@@ -313,7 +321,27 @@ function setupTrackingSubscriber(io) {
             timestamp: payload.updatedAt || new Date(),
           };
 
-          io.to(`order_${payload.orderId}`).emit("rider_location_changed", fullPayload);
+          targetRooms.forEach((room) => {
+            io.to(room).emit("rider_location_changed", fullPayload);
+            io.to(room).emit("rider_location_update", fullPayload);
+          });
+        }
+
+        // 🔄 Cross-Service Status Update Broadcast (from Logistics or Rider Service)
+        if (payload.event === "order_status_changed" || payload.event === "order_status_update" || payload.status) {
+          const statusPayload = {
+            orderId: orderId,
+            status: payload.status,
+            deliveryProgress: payload.deliveryProgress,
+            riderId: payload.riderId,
+            timestamp: payload.timestamp || new Date(),
+          };
+
+          targetRooms.forEach((room) => {
+            io.to(room).emit("order_status_changed", statusPayload);
+            io.to(room).emit("order_status_update", statusPayload);
+          });
+          io.to("admins_room").emit("order_status_changed", statusPayload);
         }
       } catch (e) {
         // Safe catch for malformed Pub/Sub payload

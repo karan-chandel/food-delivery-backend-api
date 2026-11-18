@@ -60,13 +60,22 @@ const authenticateToken = async (req, res, next) => {
         if (!user && decoded.phone) {
           user = await Customer.findOne({ phone: decoded.phone });
         }
+
+        // 🛡️ Auto-Heal Customer Name: If existing record has placeholder User_xxxx, update with decoded real name
+        if (user && decoded.name && (!user.name || user.name.startsWith("User_")) && !decoded.name.startsWith("User_")) {
+          user.name = decoded.name;
+          if (decoded.email && !user.email) user.email = decoded.email;
+          Customer.findByIdAndUpdate(user._id, { $set: { name: user.name, ...(decoded.email ? { email: decoded.email } : {}) } }).catch(() => {});
+        }
+
         // JIT Provisioning: if user was created in auth microservice, ensure record exists in core DB
         if (!user) {
           try {
             user = await Customer.create({
               _id: decoded.userId,
-              name: decoded.name || `User_${(decoded.phone || "0000").slice(-4)}`,
+              name: decoded.name && !decoded.name.startsWith("User_") ? decoded.name : (decoded.name || `User_${(decoded.phone || "0000").slice(-4)}`),
               phone: decoded.phone || "0000000000",
+              email: decoded.email || "",
               role: 'customer',
               isVerified: decoded.isVerified ?? true,
               isActive: true,
@@ -78,6 +87,7 @@ const authenticateToken = async (req, res, next) => {
                 _id: decoded.userId,
                 name: decoded.name || `User_${(decoded.phone || "0000").slice(-4)}`,
                 phone: decoded.phone,
+                email: decoded.email || "",
                 role: 'customer',
                 isVerified: decoded.isVerified ?? true,
                 isActive: true,

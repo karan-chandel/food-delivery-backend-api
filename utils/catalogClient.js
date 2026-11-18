@@ -433,10 +433,35 @@ const getUserCart = async (userId) => {
   }
 };
 
+/**
+ * Clear user's active cart in Catalog Service once Core Platform confirms checkout
+ */
+const clearUserCart = async (userId) => {
+  if (!userId) return null;
+  const targetUrl = `${CATALOG_SERVICE_URL.replace(/\/+$/, "")}/internal/v1/cart/user/${encodeURIComponent(String(userId))}`;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    const response = await fetch(targetUrl, {
+      method: "DELETE",
+      headers: {
+        "X-Internal-Secret": INTERNAL_SERVICE_SECRET || "d778a0a96422d9c1203f62e9753cbbb2fb9b175e41295e5a1d02ed0224152595",
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response.ok;
+  } catch (err) {
+    console.warn(`⚠️ [CatalogClient] Failed to clear cart for user ${userId}: ${err.message}`);
+    return false;
+  }
+};
+
 module.exports = {
   validateCart,
   localValidateCart,
   getRestaurantByOwnerId,
   syncRestaurantReview,
   getUserCart,
+  clearUserCart,
 };
