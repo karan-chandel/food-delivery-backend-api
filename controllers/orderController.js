@@ -749,7 +749,8 @@ exports.getOrderById = async (req, res, next) => {
 exports.updateOrderStatus = async (req, res, next) => {
   try {
     const { orderId } = req.params;
-    const { status, location, note } = req.body;
+    const { location, note } = req.body;
+    const status = typeof req.body.status === 'string' ? req.body.status.toLowerCase().trim() : req.body.status;
 
     const validStatuses = [
       'confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery',

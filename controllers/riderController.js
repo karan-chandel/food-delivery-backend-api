@@ -642,7 +642,8 @@ exports.getAcceptedOrders = async (req, res, next) => {
 // ✅ Update Order Delivery Status
 exports.updateOrderStatusByRider = async (req, res, next) => {
   try {
-    const { status, note, lat, lng } = req.body;
+    const { note, lat, lng } = req.body;
+    const status = typeof req.body.status === 'string' ? req.body.status.toLowerCase().trim() : req.body.status;
     const validStatuses = ['picked_up', 'out_for_delivery', 'arrived_at_location', 'delivered', 'failed'];
 
     if (!validStatuses.includes(status)) {
