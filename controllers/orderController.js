@@ -695,9 +695,13 @@ exports.getOrderById = async (req, res, next) => {
 
     if (req.user.role === 'restaurant') {
       const resolvedResId = await resolveRestaurantIdForUser(req.user);
+      if (!resolvedResId) {
+        return res.status(403).json({ success: false, error: "Restaurant profile not linked to this partner account" });
+      }
       const orderResId = (order.restaurantId?._id || order.restaurantId)?.toString();
-      if (!resolvedResId || !orderResId || orderResId !== resolvedResId)
-        return res.status(403).json({ success: false, error: "Not authorized" });
+      if (!orderResId || orderResId !== resolvedResId) {
+        return res.status(403).json({ success: false, error: "Not authorized: This order belongs to another restaurant" });
+      }
     }
 
     if (req.user.role === 'rider') {
@@ -772,9 +776,18 @@ exports.updateOrderStatus = async (req, res, next) => {
 
     if (req.user.role === 'restaurant') {
       const resolvedResId = await resolveRestaurantIdForUser(req.user);
+      if (!resolvedResId) {
+        return res.status(403).json({
+          success: false,
+          error: "Restaurant profile not linked to this partner account. Please create or complete your restaurant profile first."
+        });
+      }
       const orderResId = (order.restaurantId?._id || order.restaurantId)?.toString();
-      if (!resolvedResId || !orderResId || orderResId !== resolvedResId) {
-        return res.status(403).json({ success: false, error: "Not allowed" });
+      if (!orderResId || orderResId !== resolvedResId) {
+        return res.status(403).json({
+          success: false,
+          error: "Not allowed: This order belongs to another restaurant"
+        });
       }
     }
 
@@ -1201,9 +1214,13 @@ exports.trackOrder = async (req, res, next) => {
 
     if (req.user.role === 'restaurant') {
       const resolvedResId = await resolveRestaurantIdForUser(req.user);
+      if (!resolvedResId) {
+        return res.status(403).json({ success: false, error: "Restaurant profile not linked to this partner account" });
+      }
       const orderResId = (order.restaurantId?._id || order.restaurantId)?.toString();
-      if (!resolvedResId || !orderResId || orderResId !== resolvedResId)
-        return res.status(403).json({ success: false, error: "Not authorized" });
+      if (!orderResId || orderResId !== resolvedResId) {
+        return res.status(403).json({ success: false, error: "Not authorized: This order belongs to another restaurant" });
+      }
     }
 
     if (req.user.role === 'rider') {
