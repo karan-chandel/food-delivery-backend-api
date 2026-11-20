@@ -1,8 +1,8 @@
 const mongoose = require('mongoose');
 
 const restaurantUserSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  email: { type: String, lowercase: true },
+  name: { type: String, required: false, default: "", trim: true },
+  email: { type: String, lowercase: true, trim: true },
   phone: { type: String, required: true, unique: true },
   profilePicture: String,
   role: { type: String, default: 'restaurant' },

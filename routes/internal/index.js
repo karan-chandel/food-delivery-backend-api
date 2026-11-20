@@ -84,6 +84,16 @@ router.post("/rider-sync", async (req, res, next) => {
         { $set: updateSet },
         { new: true }
       );
+
+      // Synchronize with User collection as well
+      const userUpdates = {};
+      const isPlaceholder = (n) => !n || /^User[_\d]+/i.test(String(n).trim()) || /^Rider[_\d]+/i.test(String(n).trim());
+      if (updateSet.name && !isPlaceholder(updateSet.name)) userUpdates.name = updateSet.name;
+      if (updateSet.email) userUpdates.email = updateSet.email;
+      if (typeof updateSet.isVerified === "boolean") userUpdates.isVerified = updateSet.isVerified;
+      if (Object.keys(userUpdates).length > 0) {
+        User.findByIdAndUpdate(riderId, { $set: userUpdates }).catch(() => {});
+      }
     }
 
     const io = req.app.get("io");
@@ -221,6 +231,16 @@ router.post("/restaurant-sync", async (req, res, next) => {
         { $set: updateSet, $setOnInsert: setOnInsert },
         { new: true, upsert: true }
       );
+
+      // Synchronize with User collection as well
+      const userUpdates = {};
+      const isPlaceholder = (n) => !n || /^User[_\d]+/i.test(String(n).trim()) || /^Partner[_\d]+/i.test(String(n).trim());
+      if (name && !isPlaceholder(name)) userUpdates.name = name;
+      if (email) userUpdates.email = email;
+      if (typeof isVerified === "boolean") userUpdates.isVerified = isVerified;
+      if (Object.keys(userUpdates).length > 0) {
+        User.findByIdAndUpdate(partnerId, { $set: userUpdates }).catch(() => {});
+      }
     }
 
     let restDoc = null;
@@ -391,30 +411,51 @@ router.get("/restaurants/:restaurantId/analytics", async (req, res, next) => {
  */
 router.post("/sync-customer", async (req, res, next) => {
   try {
-    const { userId, name, phone, email, profilePicture, addresses } = req.body;
+    const { userId, name, phone, email, profilePicture, addresses, isVerified } = req.body;
     if (!userId && !phone) {
       return res.status(400).json({ success: false, error: "userId or phone is required" });
     }
 
+    const isPlaceholder = (n) => !n || /^User[_\d]+/i.test(String(n).trim()) || /^Rider[_\d]+/i.test(String(n).trim());
+
     const updateFields = {};
-    if (name) updateFields.name = name.trim();
     if (phone) updateFields.phone = phone.trim();
-    if (email) updateFields.email = email.trim();
+    if (email !== undefined) updateFields.email = email.trim();
     if (profilePicture !== undefined) updateFields.profilePicture = profilePicture;
     if (Array.isArray(addresses)) updateFields.addresses = addresses;
+    if (typeof isVerified === "boolean") updateFields.isVerified = isVerified;
+    else updateFields.isVerified = true;
+
+    // Fetch existing customer to protect real name from placeholder overwrite
+    let existingCustomer = null;
+    if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+      existingCustomer = await Customer.findById(userId);
+    } else if (phone) {
+      existingCustomer = await Customer.findOne({ phone: phone.trim() });
+    }
+
+    // Only set name if provided name is real, or if existing has placeholder/empty
+    if (name !== undefined) {
+      const trimmedName = String(name).trim();
+      if (!isPlaceholder(trimmedName) || !existingCustomer || isPlaceholder(existingCustomer.name)) {
+        updateFields.name = trimmedName;
+      }
+    }
 
     let customer = null;
     if (userId && mongoose.Types.ObjectId.isValid(userId)) {
       customer = await Customer.findByIdAndUpdate(userId, { $set: updateFields }, { new: true, upsert: true });
     } else if (phone) {
-      customer = await Customer.findOneAndUpdate({ phone }, { $set: updateFields }, { new: true, upsert: true });
+      customer = await Customer.findOneAndUpdate({ phone: phone.trim() }, { $set: updateFields }, { new: true, upsert: true });
     }
 
-    if (userId && User) {
-      User.findByIdAndUpdate(userId, { $set: updateFields }).catch(() => {});
+    if (customer?._id && User) {
+      const userUpdate = { ...updateFields };
+      delete userUpdate.addresses;
+      User.findByIdAndUpdate(customer._id, { $set: userUpdate }).catch(() => {});
     }
 
-    console.log(`✅ [Internal Sync] Customer profile synchronized: ${name || phone} (${userId})`);
+    console.log(`✅ [Internal Sync] Customer profile synchronized: ${customer?.name || phone} (${customer?._id})`);
     res.status(200).json({ success: true, message: "Customer profile synced successfully in Core Platform", customer });
   } catch (err) {
     next(err);

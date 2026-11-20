@@ -12,6 +12,7 @@ const tokenHelper = require("../utils/tokenHelper");
 const smsService = require("../utils/smsService");
 const catalogClient = require("../utils/catalogClient");
 const fs = require('fs');
+const crypto = require('crypto');
 
 // Generate random 6-digit OTP
 const generateOTP = () => {
@@ -170,6 +171,11 @@ exports.verifyOtp = async (req, res, next) => {
     const existingRestaurantUser = await RestaurantUser.findOne({ phone });
     const existingRider = await Rider.findOne({ phone });
 
+    const isPlaceholder = (n) => !n || /^User[_\d]+/i.test(String(n).trim()) || /^Rider[_\d]+/i.test(String(n).trim()) || /^Partner[_\d]+/i.test(String(n).trim());
+    const providedName = (name && name.trim()) ? name.trim() : null;
+    const existingRealName = [existingCustomer?.name, existingRestaurantUser?.name, existingRider?.name, baseUser?.name].find(n => n && !isPlaceholder(n)) || null;
+    const resolvedName = providedName || existingRealName || "";
+
     if (!baseUser) {
       isNewUser = true;
 
@@ -178,7 +184,7 @@ exports.verifyOtp = async (req, res, next) => {
 
       const baseUserData = {
         phone,
-        name: name || existingRestaurantUser?.name || existingCustomer?.name || existingRider?.name || `User${phone.slice(-4)}`,
+        name: resolvedName,
         email: email || existingRestaurantUser?.email || existingCustomer?.email || null,
         role: otpRole,
         isVerified: isVerified,
@@ -193,8 +199,13 @@ exports.verifyOtp = async (req, res, next) => {
       console.log(`... New/relinked ${otpRole} user created: ${baseUser._id}`);
     } else {
       const updateData = { lastLogin: new Date() };
-      if (name) updateData.name = name;
+      if (providedName) {
+        updateData.name = providedName;
+      } else if (isPlaceholder(baseUser.name) && existingRealName) {
+        updateData.name = existingRealName;
+      }
       if (email) updateData.email = email;
+      if (isVerified && !baseUser.isVerified) updateData.isVerified = true;
 
       baseUser = await User.findByIdAndUpdate(baseUser._id, updateData, { new: true });
       console.log(`... Existing user logged in for role: ${otpRole}`);
@@ -203,7 +214,7 @@ exports.verifyOtp = async (req, res, next) => {
     // Ensure role-specific profile exists for the requested portal
     const profileData = {
       phone: baseUser.phone,
-      name: baseUser.name,
+      name: baseUser.name || "",
       email: baseUser.email,
       _id: baseUser._id,
       lastLogin: new Date()
@@ -223,11 +234,21 @@ exports.verifyOtp = async (req, res, next) => {
             totalSpent: 0
           });
         } else {
+          const customerUpdate = { lastLogin: new Date(), isVerified: true };
+          if (baseUser.name && !isPlaceholder(baseUser.name)) {
+            customerUpdate.name = baseUser.name;
+          }
+          if (baseUser.email) customerUpdate.email = baseUser.email;
+
           roleSpecificUser = await Customer.findByIdAndUpdate(
             roleSpecificUser._id,
-            { lastLogin: new Date(), isVerified: true },
+            customerUpdate,
             { new: true }
           );
+        }
+        if (!baseUser.isVerified) {
+          baseUser.isVerified = true;
+          await User.findByIdAndUpdate(baseUser._id, { $set: { isVerified: true } });
         }
         break;
 
@@ -293,15 +314,18 @@ exports.verifyOtp = async (req, res, next) => {
       req
     });
 
+    const isProfileComplete = Boolean(baseUser.name && baseUser.name.trim() && !isPlaceholder(baseUser.name));
+
     let userResponse = {
       id: baseUser._id,
-      name: baseUser.name,
+      name: baseUser.name || "",
       phone: baseUser.phone,
-      email: baseUser.email,
-      profilePicture: baseUser.profilePicture,
+      email: baseUser.email || "",
+      profilePicture: baseUser.profilePicture || null,
       addresses: baseUser.addresses || [],
       role: baseUser.role,
       isVerified: baseUser.isVerified,
+      isProfileComplete,
       lastLogin: baseUser.lastLogin
     };
 
@@ -469,6 +493,33 @@ exports.updateProfile = async (req, res, next) => {
         success: false,
         error: "User not found"
       });
+    }
+
+    // 🔄 Sync updated profile to zewito-auth-service
+    const authServiceUrl = process.env.AUTH_SERVICE_URL || (process.env.NODE_ENV !== "production" ? "http://localhost:5052" : "https://zewito-auth-service.onrender.com");
+    if (authServiceUrl && updatedUser) {
+      const secret = process.env.INTERNAL_SERVICE_SECRET || "d778a0a96422d9c1203f62e9753cbbb2fb9b175e41295e5a1d02ed0224152595";
+      fetch(`${authServiceUrl.replace(/\/+$/, "")}/api/v1/auth/internal/sync-profile`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Internal-Secret": secret,
+          "X-Internal-Service-Token": crypto
+            .createHmac("sha256", secret)
+            .update("zewito-inter-service-comm")
+            .digest("hex"),
+        },
+        body: JSON.stringify({
+          userId: String(updatedUser._id),
+          role: updatedUser.role || role,
+          name: updatedUser.name,
+          email: updatedUser.email,
+          profilePicture: updatedUser.profilePicture,
+          phone: updatedUser.phone,
+          isVerified: updatedUser.isVerified,
+        }),
+        signal: AbortSignal.timeout(3500),
+      }).catch((e) => console.warn("[FoodBE] Auth service profile sync notice:", e.message));
     }
 
     res.json({

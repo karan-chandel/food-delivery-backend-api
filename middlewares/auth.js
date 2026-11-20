@@ -61,11 +61,13 @@ const authenticateToken = async (req, res, next) => {
           user = await Customer.findOne({ phone: decoded.phone });
         }
 
-        // 🛡️ Auto-Heal Customer Name: If existing record has placeholder User_xxxx, update with decoded real name
-        if (user && decoded.name && (!user.name || user.name.startsWith("User_")) && !decoded.name.startsWith("User_")) {
+        // 🛡️ Auto-Heal Customer Name: If existing record has placeholder User_xxxx / Userxxxx, update with decoded real name
+        const isPlaceholder = (n) => !n || /^User[_\d]+/i.test(String(n).trim()) || /^Rider[_\d]+/i.test(String(n).trim()) || /^Partner[_\d]+/i.test(String(n).trim());
+        if (user && decoded.name && isPlaceholder(user.name) && !isPlaceholder(decoded.name)) {
           user.name = decoded.name;
           if (decoded.email && !user.email) user.email = decoded.email;
           Customer.findByIdAndUpdate(user._id, { $set: { name: user.name, ...(decoded.email ? { email: decoded.email } : {}) } }).catch(() => {});
+          User.findByIdAndUpdate(user._id, { $set: { name: user.name, ...(decoded.email ? { email: decoded.email } : {}) } }).catch(() => {});
         }
 
         // JIT Provisioning: if user was created in auth microservice, ensure record exists in core DB
@@ -73,7 +75,7 @@ const authenticateToken = async (req, res, next) => {
           try {
             user = await Customer.create({
               _id: decoded.userId,
-              name: decoded.name && !decoded.name.startsWith("User_") ? decoded.name : (decoded.name || `User_${(decoded.phone || "0000").slice(-4)}`),
+              name: decoded.name && !isPlaceholder(decoded.name) ? decoded.name : "",
               phone: decoded.phone || "0000000000",
               email: decoded.email || "",
               role: 'customer',
@@ -85,7 +87,7 @@ const authenticateToken = async (req, res, next) => {
             if (!user) {
               user = {
                 _id: decoded.userId,
-                name: decoded.name || `User_${(decoded.phone || "0000").slice(-4)}`,
+                name: decoded.name && !isPlaceholder(decoded.name) ? decoded.name : "",
                 phone: decoded.phone,
                 email: decoded.email || "",
                 role: 'customer',
@@ -104,7 +106,7 @@ const authenticateToken = async (req, res, next) => {
           try {
             user = await Rider.create({
               _id: decoded.userId,
-              name: decoded.name || `Rider_${(decoded.phone || "0000").slice(-4)}`,
+              name: decoded.name && !isPlaceholder(decoded.name) ? decoded.name : "",
               phone: decoded.phone || "0000000000",
               role: 'rider',
               isVerified: decoded.isVerified ?? true,
@@ -164,13 +166,17 @@ const authenticateToken = async (req, res, next) => {
       }
       
       // Auto-sync verification status from cryptographically verified token if DB is stale
-      if (decoded.isVerified && !user.isVerified) {
-        user.isVerified = true;
+      if (decoded.isVerified) {
+        if (!user.isVerified) user.isVerified = true;
         if (user.role === 'restaurant') {
           RestaurantUser.updateOne({ _id: user._id }, { $set: { isVerified: true } }).catch(() => {});
+          User.updateOne({ _id: user._id }, { $set: { isVerified: true } }).catch(() => {});
         } else if (user.role === 'rider') {
           Rider.updateOne({ _id: user._id }, { $set: { isVerified: true } }).catch(() => {});
+          User.updateOne({ _id: user._id }, { $set: { isVerified: true } }).catch(() => {});
         } else {
+          // Sync BOTH Customer and User collections so isVerified is NEVER de-synced!
+          Customer.updateOne({ _id: user._id }, { $set: { isVerified: true } }).catch(() => {});
           User.updateOne({ _id: user._id }, { $set: { isVerified: true } }).catch(() => {});
         }
       }

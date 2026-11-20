@@ -301,10 +301,11 @@ function initializeSocket(server) {
                         user = await Customer.findOne({ phone: decoded.phone });
                     }
                     if (!user) {
+                        const isPlaceholder = (n) => !n || /^User[_\d]+/i.test(String(n).trim()) || /^Rider[_\d]+/i.test(String(n).trim());
                         try {
                             user = await Customer.create({
                                 _id: decoded.userId,
-                                name: decoded.name || `User_${(decoded.phone || "0000").slice(-4)}`,
+                                name: decoded.name && !isPlaceholder(decoded.name) ? decoded.name : "",
                                 phone: decoded.phone || "0000000000",
                                 role: 'customer',
                                 isVerified: decoded.isVerified ?? true,
@@ -313,7 +314,7 @@ function initializeSocket(server) {
                         } catch {
                             user = {
                                 _id: decoded.userId,
-                                name: decoded.name || `User_${(decoded.phone || "0000").slice(-4)}`,
+                                name: decoded.name && !isPlaceholder(decoded.name) ? decoded.name : "",
                                 phone: decoded.phone,
                                 role: 'customer',
                                 isVerified: decoded.isVerified ?? true,

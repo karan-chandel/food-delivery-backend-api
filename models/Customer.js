@@ -19,8 +19,8 @@ const addressSchema = new mongoose.Schema({
 }, { _id: true, timestamps: true });
 
 const customerSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  email: { type: String, lowercase: true },
+  name: { type: String, required: false, default: "", trim: true },
+  email: { type: String, lowercase: true, trim: true },
   phone: { type: String, required: true, unique: true },
   profilePicture: String,
   role: { type: String, default: 'customer' },
