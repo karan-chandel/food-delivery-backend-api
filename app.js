@@ -93,6 +93,20 @@ app.get('/', (req, res) => {
   });
 });
 
+app.get('/health', (req, res) => {
+  const mongoose = require("mongoose");
+  const isDbConnected = mongoose.connection.readyState === 1;
+  res.status(isDbConnected ? 200 : 503).json({
+    status: isDbConnected ? "UP" : "DOWN",
+    service: "zewito-order-service",
+    version: API_VERSION,
+    port: 5050,
+    database: isDbConnected ? "CONNECTED" : "DISCONNECTED",
+    uptimeSeconds: Math.floor(process.uptime()),
+    timestamp: Date.now(),
+  });
+});
+
 app.get('/test-socket', (req, res) => {
   const io = req.app.get("io");
   res.json({
