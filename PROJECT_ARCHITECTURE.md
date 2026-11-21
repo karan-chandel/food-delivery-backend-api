@@ -1,22 +1,23 @@
 # 🍔 ZEWITO CORE PLATFORM - SYSTEM ARCHITECTURE & BLUEPRINT
 
 **Project Name:** Zewito Pure Order Platform (`zewito-order-service` / `FoodBE`)  
-**Version:** 3.0.0 (Enterprise 5-Microservices Architecture)  
+**Version:** 3.1.0 (Enterprise 6-Microservices Architecture)  
 **Type:** Real-time Mission-Critical Food Delivery & Order State Machine Engine  
 **Framework:** Node.js + Express.js  
-**Database:** MongoDB Atlas (`food-delivery` DB)  
+**Database:** MongoDB Atlas (`zewito-core-db`)  
 **Real-time Engine:** Socket.io + Redis Pub/Sub Tracking Bridge + Write-Behind Throttling  
 **Port:** `5050` (Local) / Production Render  
 **Author:** Er. Karan -svg  
 
-> ⚠️ **MICROSERVICES TOPOLOGY NOTICE (5-Service Decoupled Architecture):**  
+> ⚠️ **MICROSERVICES TOPOLOGY NOTICE (6-Service Decoupled Architecture):**  
 > This repository is the **Pure Order Service** (`zewito-order-service`) responsible strictly for Order State Machines, Razorpay Payments, Socket.io Dispatch Rooms, and Live Telemetry Bridges.  
-> The remaining domains have been decoupled into dedicated independent microservices:
-> 1. **Catalog Domain:** [`zewito-catalog-service`](https://github.com/covermantra-work/zewito-catalog-service) (Port 4001 - Menus, Restaurants, Carts, Coupons)  
-> 2. **Auth & Identity Domain:** `zewito-auth-service` (Port 5052 - Central IAM, Refresh Tokens, TRAI DLT Compliant SMSCloud Gateway)  
-> 3. **Logistics & Tracking Domain:** `zewito-logistics-service` (Port 5051 - High-frequency Redis Geospatial Geopings, Nearby Riders, Double-Entry Payouts)  
-> 4. **Admin & Governance Domain:** [`zewito-admin-service`](https://github.com/karan-chandel/zewito-admin-service.git) (Port 5053 - Support Tickets, Staff Audits, KYC Approvals)  
-> 5. **API Gateway:** `zewito-api-gateway` (Port 8000 - Dynamic CORS, Unified Routing, WebSocket Proxy)
+> The remaining domains are decoupled into dedicated independent microservices:
+> 1. **Catalog Domain:** [`zewito-catalog-service`](https://github.com/karan-chandel/zewito-catalog-service.git) (Port 4001 - Menus, Restaurants, Carts, Coupons)  
+> 2. **Auth & Identity Domain:** [`zewito-auth-service`](https://github.com/karan-chandel/zewito-auth-service.git) (Port 5052 - Central IAM, Refresh Tokens, TRAI DLT Compliant SMSCloud Gateway)  
+> 3. **Rider Domain:** [`zewito-rider-service`](https://github.com/karan-chandel/zewito-rider-service.git) (Port 5054 - Rider Profile, KYC Onboarding, Availability & Live Tracking)  
+> 4. **Logistics & Tracking Domain:** [`zewito-logistics-service`](https://github.com/karan-chandel/zewito-logistics-service.git) (Port 5051 - High-frequency Redis Geospatial Geopings, Nearby Riders, Double-Entry Payouts)  
+> 5. **Admin & Governance Domain:** [`zewito-admin-service`](https://github.com/karan-chandel/zewito-admin-service.git) (Port 5053 - Support Tickets, Staff Audits, KYC Approvals)  
+> 6. **API Gateway:** `zewito-api-gateway` (Port 8000 - Dynamic CORS, Unified Routing, WebSocket Proxy)
 
 ---
 

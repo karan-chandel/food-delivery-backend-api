@@ -1,14 +1,14 @@
 # 🍔 ZEWITO PLATFORM — SYSTEM ARCHITECTURE & SCALING BLUEPRINT
 
 **Location:** `FoodBE/docs/ARCHITECTURE.md`  
-**System Version:** 2.0.0 (Decoupled Microservices Architecture)  
+**System Version:** 3.1.0 (Enterprise 6-Microservices Architecture)  
 **Author:** Principal Engineering Team  
 
 ---
 
 ## 🏛️ 1. Architecture Overview: Microservices Fleet Topology
 
-The Zewito Backend is structured as an **Enterprise 5-Service Microservices Architecture** orchestrated by a Central API Gateway:
+The Zewito Backend is structured as an **Enterprise 6-Service Microservices Architecture** orchestrated by a Central API Gateway:
 
 ```
                               ┌────────────────────────────────────────┐
@@ -45,16 +45,17 @@ The Zewito Backend is structured as an **Enterprise 5-Service Microservices Arch
                   │                       │  │• CRM Tickets │     │                              │
                   │                       │  └──────┬───────┘     │                              │
                   ▼                       ▼         ▼             ▼                              ▼
-         [DB: zewito-catalog]      [DB: zewito-auth] [DB: zewito-admin] [DB: zewito-logistics]   [DB: food-delivery]
+         [DB: zewito-core-db]      [DB: zewito-auth-db] [DB: zewito-admin-db] [DB: zewito-logistics-db]   [DB: zewito-core-db]
 ```
 
 ### Active Repositories in Production:
-* **API Gateway (`zewito-api-gateway`) (Port 8000)**: Single entry point, CORS, and 9 AM - 6 PM IST Smart Anti-Sleep Heartbeat.
-* **Catalog Service (`zewito-catalog-service`) (Port 4001)**: Restaurant discovery, KYC submissions, menus, and carts.
-* **Core Order Engine (`FoodBE`) (Port 5050)**: Order state machine, payments, and real-time Socket.io dispatch rooms.
-* **Auth & IAM (`zewito-auth-service`) (Port 5052)**: User registration, OTP generation/verification (SMSCloud), and JWT lifecycle.
-* **Logistics & Tracking (`zewito-logistics-service`) (Port 5051)**: Rider GPS tracking, Redis geospatial index, and automated payouts.
-* **Admin Governance (`zewito-admin-service`) (Port 5053)**: Partner verification approvals, customer support tickets, and audit trails.
+* **API Gateway (`zewito-api-gateway`) (Port 8000)**: Single entry point, CORS, dynamic routing, and keep-alive heartbeats.
+* **Catalog Service (`zewito-catalog-service`) (Port 4001)**: Restaurant discovery, KYC submissions, menus, and carts (`karan-chandel/zewito-catalog-service`).
+* **Core Order Engine (`FoodBE`) (Port 5050)**: Order state machine, payments, and real-time Socket.io dispatch rooms (`karan-chandel/zewito-order-service`).
+* **Auth & IAM (`zewito-auth-service`) (Port 5052)**: User registration, OTP generation/verification (SMSCloud), and JWT lifecycle (`karan-chandel/zewito-auth-service`).
+* **Rider Service (`zewito-rider-service`) (Port 5054)**: Rider onboarding, document verification, availability toggle, and telemetry (`karan-chandel/zewito-rider-service`).
+* **Logistics & Tracking (`zewito-logistics-service`) (Port 5051)**: Rider GPS tracking, Redis geospatial index, and automated payouts (`karan-chandel/zewito-logistics-service`).
+* **Admin Governance (`zewito-admin-service`) (Port 5053)**: Partner verification approvals, customer support tickets, and audit trails (`karan-chandel/zewito-admin-service`).
 * **Deprecated**: `FoodBE_Customer` (monolithic prototype; not deployed).
 
 ---
