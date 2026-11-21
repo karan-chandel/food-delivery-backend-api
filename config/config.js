@@ -70,10 +70,10 @@ module.exports = {
     (isDev ? "http://localhost:4001" : "https://zewito-catalog-service.onrender.com"),
   RIDER_SERVICE_URL:
     process.env.RIDER_SERVICE_URL ||
-    (isDev ? "http://localhost:5054" : "https://zewito-rider-service.onrender.com"),
+    (isDev ? "http://localhost:5054" : "https://zewito-rider-service-5j83.onrender.com"),
   LOGISTICS_SERVICE_URL:
     process.env.LOGISTICS_SERVICE_URL ||
-    (isDev ? "http://localhost:5051" : "https://zewito-logistics-service.onrender.com"),
+    (isDev ? "http://localhost:5051" : "https://zewito-logistics-service-5r7w.onrender.com"),
   AUTH_SERVICE_URL:
     process.env.AUTH_SERVICE_URL ||
     (isDev ? "http://localhost:5052" : "https://zewito-auth-service.onrender.com"),
